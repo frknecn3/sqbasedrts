@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Squad command</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+    <style>
+        :root {
+            color-scheme: dark;
+            --text-primary: #ecebe6;
+            --text-secondary: #b4b2a9;
+            --text-success: #7fd18b;
+            --text-danger: #f09595;
+            --text-warning: #efbf5a;
+            --text-accent: #cfe3f8;
+            --bg-accent: #0c447c;
+            --border: rgba(255, 255, 255, .12);
+            --border-strong: rgba(255, 255, 255, .24);
+            --border-accent: #378add;
+            --surface-1: #202328;
+            --surface-2: #2a2d33;
+            --radius: 8px
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            padding: 24px 16px;
+            background: #15171b;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
+        }
+
+        button {
+            font: inherit;
+            color: var(--text-primary);
+            background: transparent;
+            border: 0.5px solid var(--border-strong);
+            border-radius: var(--radius);
+            padding: 6px 14px;
+            cursor: pointer
+        }
+
+        button:hover {
+            background: var(--surface-1)
+        }
+
+        button:active {
+            transform: scale(.98)
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap
+        }
+
+        #rts {
+            max-width: 1000px;
+            margin: 0 auto;
+            user-select: none;
+            -webkit-user-select: none;
+            font-size: 13px;
+            color: var(--text-secondary)
+        }
+
+        #bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px 14px;
+            padding: 0 0 8px
+        }
+
+        #bar b {
+            font-weight: 500;
+            color: var(--text-primary)
+        }
+
+        #bar .ti {
+            font-size: 16px;
+            vertical-align: -2px
+        }
+
+        #bar button {
+            padding: 4px 10px;
+            font-size: 13px
+        }
+
+        #view {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 0.5px solid var(--border)
+        }
+
+        #cv {
+            display: block;
+            width: 100%;
+            touch-action: none;
+            outline: none
+        }
+
+        #mm {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: 150px;
+            height: 75px;
+            touch-action: none;
+            cursor: pointer
+        }
+
+        #ov {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.45)
+        }
+
+        .pnl {
+            background: var(--surface-2);
+            border: 0.5px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            max-width: 330px;
+            text-align: center
+        }
+
+        .pnl h3 {
+            margin: 0 0 6px;
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--text-primary)
+        }
+
+        .pnl p {
+            margin: 0 0 12px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary)
+        }
+
+        #cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(102px, 1fr));
+            gap: 8px;
+            margin-top: 8px
+        }
+
+        .card {
+            border: 0.5px solid var(--border);
+            border-radius: var(--radius);
+            padding: 6px 8px;
+            cursor: pointer;
+            background: var(--surface-1)
+        }
+
+        .card.sel {
+            border-color: var(--border-accent);
+            background: var(--bg-accent);
+            color: var(--text-accent)
+        }
+
+        .ch {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 500;
+            color: var(--text-primary)
+        }
+
+        .card.sel .ch {
+            color: var(--text-accent)
+        }
+
+        .pips {
+            display: flex;
+            gap: 3px;
+            margin: 6px 0 4px
+        }
+
+        .pips span {
+            flex: 1;
+            height: 5px;
+            border-radius: 2px;
+            background: var(--border-strong);
+            overflow: hidden
+        }
+
+        .pips i {
+            display: block;
+            height: 100%;
+            background: var(--text-success)
+        }
+
+        .cs {
+            font-size: 11px
+        }
+
+        #hint {
+            font-size: 12px;
+            margin-top: 8px;
+            line-height: 1.6
+        }
+    </style>
+</head>
+
+<body>
+    <h1 class="sr-only">Playable isometric real-time strategy game where you command five-soldier squads as single
+        units, fight enemy squads with gunfire and grenades, and capture the enemy HQ.</h1>
+    <div id="rts">
+        <div id="bar">
+            <span><i class="ti ti-flag" aria-hidden="true"></i> <span id="obj">Capture the enemy HQ</span></span>
+            <span><i class="ti ti-coin" aria-hidden="true"></i> <b id="cp">60</b> CP</span>
+            <span><i class="ti ti-skull" aria-hidden="true"></i> <b id="kl">0</b></span>
+            <span><i class="ti ti-clock" aria-hidden="true"></i> <b id="clk">0:00</b></span>
+            <span style="flex:1"></span>
+            <button id="dep"><i class="ti ti-user-plus" aria-hidden="true"></i> Deploy squad · 120</button>
+            <button id="pz" aria-label="Pause"><i class="ti ti-player-pause" aria-hidden="true"></i></button>
+            <button id="snd" aria-label="Sound"><i class="ti ti-volume" aria-hidden="true"></i></button>
+        </div>
+        <div id="view">
+            <canvas id="cv" tabindex="0"></canvas>
+            <canvas id="mm"></canvas>
+            <div id="ov">
+                <div class="pnl">
+                    <h3 id="ovt">Squad command</h3>
+                    <p id="ovp">Cross the river and capture the enemy HQ flag. Squads resting near your HQ regain lost
+                        soldiers.</p><button id="ovb"><i class="ti ti-player-play" aria-hidden="true"></i>
+                        Deploy</button>
+                </div>
+            </div>
+        </div>
+        <div id="cards"></div>
+        <div id="hint">Click or drag to select squads · right-click to move or attack · right-drag to set facing · G
+            grenade · F formation · X stop · R deploy · 1–6 squads · WASD, arrows, wheel or minimap for camera · P pause
+        </div>
+    </div>
+    <script>
+        (() => {
+            const N = 40, HW = 32, HH = 16, GOX = N * HW, TAU = Math.PI * 2, PI = Math.PI, NN = N * N;
+            const $ = id => document.getElementById(id);
+            const cv = $('cv'), ctx = cv.getContext('2d'), mm = $('mm'), mc = mm.getContext('2d'), view = $('view');
+            const FONT = getComputedStyle(document.body).fontFamily || 'sans-serif';
+            const DPR = Math.min(2, window.devicePixelRatio || 1);
+            let W = 680, H = 460, OX = 0, OY = 0, lastW = 0;
+            const R0 = (a, b) => a + Math.random() * (b - a), cl = (v, a, b) => v < a ? a : v > b ? b : v, hy = Math.hypot;
+            const ix = (x, y) => (x - y) * HW, iy = (x, y) => (x + y) * HH;
+            const ad = (a, b) => { let d = (b - a) % TAU; if (d > PI) d -= TAU; else if (d < -PI) d += TAU; return d };
+            const turn = (a, b, m) => { const d = ad(a, b); return Math.abs(d) <= m ? b : a + Math.sign(d) * m };
+            function mul(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+            function noise(seed) { const r = mul(seed), g = new Float32Array(4096); for (let k = 0; k < 4096; k++)g[k] = r(); const G = (a, b) => g[(b & 63) * 64 + (a & 63)]; return (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, a = G(xi, yi), b = G(xi + 1, yi), c = G(xi, yi + 1), d = G(xi + 1, yi + 1), u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v } }
+            const mix = (a, b, t) => 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',') + ')';
+            function ell(g, x, y, rx, ry) { g.beginPath(); g.ellipse(x, y, Math.max(.1, rx), Math.max(.1, ry), 0, 0, TAU) }
+            function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, Math.max(.1, r), 0, TAU); ctx.fill() }
+            function line(a, b, c, d) { ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke() }
+            function quad(a, b, c, d, e, f, g, h, col) { ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.lineTo(e, f); ctx.lineTo(g, h); ctx.closePath(); ctx.fillStyle = col; ctx.fill() }
+            function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); ctx.fill() }
+            const DI = [1, -1, 0, 0, 1, 1, -1, -1], DJ = [0, 0, 1, -1, 1, -1, 1, -1];
+            const PHQ = { x: 34.5, y: 34.5 }, EHQ = { x: 5.5, y: 5.5 }, BR = [-18, 0, 18];
+            const rv = u => 39 + 2.6 * Math.sin(u * .21 + .6);
+            const SIGHT = 9.5, DETECT = 10, LEASH = 11, GR = 6.5, CAPR = 2.6, CAPT = 10, COST = 120;
+            const WAVES = [1, 1, 2, 1, 2, 2], SPAWNS = [{ x: 1.5, y: 14.5 }, { x: 14.5, y: 1.5 }];
+            const NAMES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
+            const FORMS = [[[.5, 0], [-.15, -.8], [-.15, .8], [-.8, -1.6], [-.8, 1.6]], [[0, 0], [0, -.85], [0, .85], [0, -1.7], [0, 1.7]], [[0, 0], [.8, 0], [-.8, 0], [1.6, 0], [-1.6, 0]]];
+            const FN = ['Wedge', 'Line', 'Column'];
+            const WP = { rifle: { range: 7.5, burst: 3, iv: .11, c0: .75, c1: 1.35, dmg: 15, acc: .5, mag: 30, rt: 2.2 }, lmg: { range: 8.5, burst: 7, iv: .075, c0: 1.3, c1: 2, dmg: 11, acc: .38, mag: 70, rt: 4 } };
+            const PAL = [{ u: '#617240', u2: '#4b5a30', h: '#4f5d30', p: '#45502b', k: '#3b4526' }, { u: '#5e626a', u2: '#484c53', h: '#3a3e45', p: '#383b41', k: '#303338', b: '#c8392f' }];
+            const SK = ['#e3b98f', '#c99a6e', '#a8784f', '#edc9a3', '#8d5f3c'];
+            const BP = [{ r: '#8d877a', e: '#b1aa9b', l: '#cdbfa2', w: '#a6987d', n: '#36404a' }, { r: '#6c6962', e: '#8f8b83', l: '#b5b1a8', w: '#8f8b84', n: '#2b333b' }, { r: '#76493a', e: '#9a6a57', l: '#bd7f63', w: '#97624d', n: '#332f2e' }];
+            const PERMS = [[[]]];
+            for (let n = 1; n <= 5; n++) { const o = [], rec = (a, r) => { if (!r.length) { o.push(a); return } for (let i = 0; i < r.length; i++)rec(a.concat([r[i]]), r.slice(0, i).concat(r.slice(i + 1))) }; rec([], [...Array(n).keys()]); PERMS.push(o) }
+            const ground = new Uint8Array(NN), block = new Uint8Array(NN), losB = new Uint8Array(NN), cover = new Uint8Array(NN), bagM = new Uint8Array(NN), vis = new Uint8Array(NN);
+            let statics = [], water = [], BC = [], GARR = [], SEGS = [];
+            const STARTS = [{ x: 28.5, y: 33.5 }, { x: 31, y: 31 }, { x: 33.5, y: 28.5 }];
+            const inb = (i, j) => i >= 0 && j >= 0 && i < N && j < N;
+            const bp = (x, y) => { const i = Math.floor(x), j = Math.floor(y); return !inb(i, j) || block[j * N + i] === 1 };
+            const visAt = (x, y) => { const i = Math.floor(x), j = Math.floor(y); return inb(i, j) && vis[j * N + i] === 2 };
+            function addObj(i, j, t, v) { const k = j * N + i; block[k] = 1; cover[k] = 1; const o = { t, i, j, v, d: i + j + 1, sx: (i - j) * HW, sy: (i + j + 1) * HH }; statics.push(o); return o }
+            function setBag(i, j) { if (!inb(i, j)) return; const k = j * N + i; if (ground[k] || block[k]) return; bagM[k] = 1; addObj(i, j, 'bags', 0) }
+            function bagLine(a, b, c, d) { const n = Math.ceil(hy(c - a, d - b) / .3); for (let k = 0; k <= n; k++)setBag(Math.floor(a + (c - a) * k / n), Math.floor(b + (d - b) * k / n)) }
+            function bagArc(cx, cy, r, a0, a1) { for (let a = a0; a <= a1; a += .07)setBag(Math.floor(cx + Math.cos(a) * r), Math.floor(cy + Math.sin(a) * r)) }
+            function addBld(i0, j0, w, h, ht, p) { for (let i = i0; i < i0 + w; i++)for (let j = j0; j < j0 + h; j++) { if (!inb(i, j)) return; const k = j * N + i; if (block[k] || ground[k]) return } const b = { i0, j0, w, h, ht, P: BP[p] }; for (let i = i0; i < i0 + w; i++)for (let j = j0; j < j0 + h; j++) { losB[j * N + i] = 1; addObj(i, j, 'bld', 0).b = b } }
+            function segD(px, py, s) { const dx = s[2] - s[0], dy = s[3] - s[1], L = dx * dx + dy * dy; let t = L ? ((px - s[0]) * dx + (py - s[1]) * dy) / L : 0; t = cl(t, 0, 1); return hy(px - s[0] - dx * t, py - s[1] - dy * t) }
+            function genMap() {
+                ground.fill(0); block.fill(0); losB.fill(0); cover.fill(0); bagM.fill(0); statics = []; water = [];
+                for (let j = 0; j < N; j++)for (let i = 0; i < N; i++) { const u = i - j, v = i + j + 1, k = j * N + i; if (Math.abs(v - rv(u)) < 1.9) { if (BR.some(b => Math.abs(u - b) <= 1)) ground[k] = 3; else { ground[k] = 2; block[k] = 1; water.push(k) } } }
+                BC = BR.map(b => { const v = rv(b); return { x: (b + v) / 2, y: (v - b) / 2 } });
+                SEGS = []; for (const c of BC) SEGS.push([PHQ.x, PHQ.y, c.x, c.y], [c.x, c.y, EHQ.x, EHQ.y]);
+                for (let k = 0; k < NN; k++) { if (ground[k]) continue; const i = k % N, j = (k / N) | 0; if (SEGS.some(s => segD(i + .5, j + .5, s) < .95)) ground[k] = 1 }
+                ;[[37, 30, 2, 3, 34, 0], [29, 36, 3, 2, 30, 1], [25, 28, 2, 2, 26, 2], [33, 22, 2, 2, 28, 1], [22, 33, 2, 2, 24, 0], [2, 9, 3, 2, 38, 1], [9, 2, 2, 3, 34, 0], [1, 1, 2, 2, 40, 2], [14, 8, 2, 2, 28, 2], [8, 13, 2, 2, 30, 0], [17, 13, 2, 2, 26, 1]].forEach(b => addBld(...b));
+                for (const c of BC) for (const s of [-1, 1]) { const px = c.x + s * 2.3, py = c.y + s * 2.3; bagLine(px - 2.4, py + 2.4, px + 2.4, py - 2.4) }
+                bagArc(EHQ.x, EHQ.y, 3.3, -.25, PI / 2 + .25); bagArc(PHQ.x, PHQ.y, 3.3, PI - .25, PI * 1.5 + .25);
+                ;[[23.5, 31.5, 25.5, 29.5], [31.5, 23.5, 33.5, 21.5], [27, 26, 28.5, 24.5], [12, 17, 13.5, 15.5], [16.5, 12.5, 18, 11], [10.5, 13, 12, 11.5]].forEach(f => bagLine(...f));
+                GARR = BC.map(c => ({ x: c.x - 2.9, y: c.y - 2.9 })).concat([{ x: EHQ.x + 1.8, y: EHQ.y + .6 }, { x: EHQ.x + .6, y: EHQ.y + 1.8 }]);
+                const r = mul(77031), nz = noise(11), keep = GARR.concat(STARTS, SPAWNS);
+                for (let j = 0; j < N; j++)for (let i = 0; i < N; i++) {
+                    const k = j * N + i; if (ground[k] || block[k]) continue; const x = i + .5, y = j + .5;
+                    if (hy(x - PHQ.x, y - PHQ.y) < 5.5 || hy(x - EHQ.x, y - EHQ.y) < 5 || keep.some(p => hy(x - p.x, y - p.y) < 2.6) || Math.abs(i + j + 1 - rv(i - j)) < 3.2) continue;
+                    let nr = false; for (let q = 0; q < 8; q++) { const a = i + DI[q], b = j + DJ[q]; if (inb(a, b) && ground[b * N + a] === 1) nr = true } if (nr) continue;
+                    const p = nz(i * .16, j * .16) > .62 ? .55 : .025, z = r(); if (z < p) addObj(i, j, 'tree', Math.floor(r() * 3)); else if (z < p + .012) addObj(i, j, 'rock', Math.floor(r() * 2))
+                }
+                for (const o of statics) if (o.t === 'bags') { let m = 0; for (let q = 0; q < 8; q++) { const a = o.i + DI[q], b = o.j + DJ[q]; if (inb(a, b) && bagM[b * N + a]) m |= 1 << q } o.m = m }
+                statics.push({ t: 'flag', team: 0, d: PHQ.x + PHQ.y, sx: ix(PHQ.x, PHQ.y), sy: iy(PHQ.x, PHQ.y) }, { t: 'flag', team: 1, d: EHQ.x + EHQ.y, sx: ix(EHQ.x, EHQ.y), sy: iy(EHQ.x, EHQ.y) })
+            }
+            const gS = new Float32Array(NN), frm = new Int32Array(NN), clo = new Int32Array(NN), opn = new Int32Array(NN), hN = new Int32Array(NN * 8), hF = new Float32Array(NN * 8); let hL = 0, sid = 0;
+            function hsw(a, b) { let t = hN[a]; hN[a] = hN[b]; hN[b] = t; t = hF[a]; hF[a] = hF[b]; hF[b] = t }
+            function hpush(n, f) { let i = hL++; hN[i] = n; hF[i] = f; while (i > 0) { const p = (i - 1) >> 1; if (hF[p] <= hF[i]) break; hsw(i, p); i = p } }
+            function hpop() { const n = hN[0]; hL--; if (hL > 0) { hN[0] = hN[hL]; hF[0] = hF[hL]; let i = 0; for (; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < hL && hF[l] < hF[m]) m = l; if (r < hL && hF[r] < hF[m]) m = r; if (m === i) break; hsw(i, m); i = m } } return n }
+            function nearFree(i, j) { for (let r = 1; r < 12; r++) { let best = null, bd = 1e9; for (let a = -r; a <= r; a++)for (let b = -r; b <= r; b++) { if (Math.max(Math.abs(a), Math.abs(b)) !== r) continue; const p = i + a, q = j + b; if (!inb(p, q) || block[q * N + p]) continue; const d = a * a + b * b; if (d < bd) { bd = d; best = [p, q] } } if (best) return best } return [cl(i, 0, N - 1), cl(j, 0, N - 1)] }
+            function segClear(ax, ay, bx, by, pad) { const dx = bx - ax, dy = by - ay, L = hy(dx, dy), n = Math.max(1, Math.ceil(L / .2)), px = L ? -dy / L * pad : 0, py = L ? dx / L * pad : 0; for (let k = 0; k <= n; k++) { const x = ax + dx * k / n, y = ay + dy * k / n; if (bp(x, y) || (pad && (bp(x + px, y + py) || bp(x - px, y - py)))) return false } return true }
+            function los(ax, ay, bx, by) { const dx = bx - ax, dy = by - ay, n = Math.ceil(hy(dx, dy) / .3), ei = Math.floor(bx), ej = Math.floor(by); for (let k = 1; k < n; k++) { const i = Math.floor(ax + dx * k / n), j = Math.floor(ay + dy * k / n); if (i === ei && j === ej) continue; if (inb(i, j) && losB[j * N + i]) return false } return true }
+            function findPath(sx, sy, tx, ty) {
+                let si = cl(Math.floor(sx), 0, N - 1), sj = cl(Math.floor(sy), 0, N - 1), ti = cl(Math.floor(tx), 0, N - 1), tj = cl(Math.floor(ty), 0, N - 1);
+                if (block[sj * N + si]) { const f = nearFree(si, sj); si = f[0]; sj = f[1] }
+                if (block[tj * N + ti]) { const f = nearFree(ti, tj); ti = f[0]; tj = f[1]; tx = ti + .5; ty = tj + .5 }
+                tx = cl(tx, .3, N - .3); ty = cl(ty, .3, N - .3);
+                if (si === ti && sj === tj) return [{ x: tx, y: ty }];
+                sid++; hL = 0; const st = sj * N + si, go = tj * N + ti; gS[st] = 0; opn[st] = sid; frm[st] = -1;
+                const he = (i, j) => { const a = Math.abs(i - ti), b = Math.abs(j - tj); return a + b - .5858 * Math.min(a, b) };
+                hpush(st, he(si, sj)); let found = false;
+                while (hL > 0) {
+                    const c = hpop(); if (clo[c] === sid) continue; clo[c] = sid; if (c === go) { found = true; break }
+                    const ci = c % N, cj = (c / N) | 0;
+                    for (let k = 0; k < 8; k++) { const di = DI[k], dj = DJ[k], ni = ci + di, nj = cj + dj; if (!inb(ni, nj)) continue; const nn = nj * N + ni; if (block[nn] || clo[nn] === sid) continue; if (di && dj && (block[cj * N + ni] || block[nj * N + ci])) continue; const g = gS[c] + (di && dj ? 1.4142 : 1); if (opn[nn] !== sid || g < gS[nn]) { opn[nn] = sid; gS[nn] = g; frm[nn] = c; hpush(nn, g + he(ni, nj)) } }
+                }
+                if (!found) return [];
+                const cells = []; let c = go; while (c !== -1 && c !== st) { cells.push(c); c = frm[c] } cells.reverse();
+                const pts = cells.map(c => ({ x: c % N + .5, y: ((c / N) | 0) + .5 })); pts[pts.length - 1] = { x: tx, y: ty };
+                const out = []; let ax = sx, ay = sy, i = 0;
+                while (i < pts.length) { let j = i; while (j + 1 < pts.length && segClear(ax, ay, pts[j + 1].x, pts[j + 1].y, .28)) j++; out.push(pts[j]); ax = pts[j].x; ay = pts[j].y; i = j + 1 }
+                return out
+            }
+            let squads = [], soldiers = [], corpses = [], bullets = [], nades = [], parts = [], rings = [], lights = [], marks = [], msgs = [], flags = [];
+            const sel = new Set(), keys = new Set(), cam = { x: 0, y: 0, z: 1 }, ptr = { x: 0, y: 0, in: false };
+            let state = 'start', gt = 0, cp = 60, kills = 0, waveT = 70, waveI = 0, eNade = 10, sqId = 0, nadeMode = false, shake = 0, visT = 0, hudT = 0, mmT = 0, shotB = 6, shotT = 0, err = '', hover = null, hoverSq = null, drag = null, edgeT = 0, lastKey = { k: '', t: 0 };
+            const cent = q => { const n = q.soldiers.length; if (!n) return { x: q.ax, y: q.ay }; let x = 0, y = 0; for (const s of q.soldiers) { x += s.x; y += s.y } return { x: x / n, y: y / n } };
+            function freeSpot(x, y) { if (!bp(x, y)) return { x, y }; const f = nearFree(Math.floor(x), Math.floor(y)); return { x: f[0] + .5, y: f[1] + .5 } }
+            function makeSquad(team, x, y, ai, face) {
+                const p = freeSpot(x, y), q = { id: ++sqId, team, soldiers: [], alive: true, ax: p.x, ay: p.y, facing: face, want: face, ff: face, form: team ? 1 : 0, order: null, path: [], rp: 0, speed: 2, gcd: team ? R0(6, 14) : 0, think: R0(0, .5), alert: 0, att: null, ai, home: { x: p.x, y: p.y, f: face }, eng: false, amove: false, rein: 0, goal: null, name: '' };
+                if (!team) { const u = new Set(squads.filter(s => !s.team && s.alive).map(s => s.name)); q.name = NAMES.find(n => !u.has(n)) || 'Squad' }
+                squads.push(q);
+                for (let k = 0; k < 5; k++)addSoldier(q, p.x, p.y, k === 0 ? 'sgt' : k === 4 ? 'lmg' : 'rifle', true);
+                assign(q); slots(q);
+                for (const s of q.soldiers) if (!bp(s.tx, s.ty)) { s.x = s.tx; s.y = s.ty } else { s.x = p.x + R0(-.2, .2); s.y = p.y + R0(-.2, .2) }
+                return q
+            }
+            function addSoldier(q, x, y, role, quiet) {
+                if (!role) { const has = r => q.soldiers.some(s => s.role === r); role = !has('lmg') ? 'lmg' : !has('sgt') ? 'sgt' : 'rifle' }
+                const w = role === 'lmg' ? WP.lmg : WP.rifle;
+                const s = { team: q.team, sq: q, role, w, x, y, vx: 0, vy: 0, aim: q.facing, hp: 100, slot: q.soldiers.length, target: null, scan: R0(0, .4), cool: R0(.3, .9), burst: w.burst, mag: w.mag, reload: 0, flash: 0, recoil: 0, walk: R0(0, 6), moving: false, hitT: 0, throwT: 0, thrown: false, tp: null, path: null, pathT: 0, dead: false, deadT: 0, skin: SK[Math.floor(Math.random() * SK.length)], cov: false, covT: 0, tx: x, ty: y, fz: 0, fvz: 0, fvx: 0, fvy: 0, fd: 1, decal: false };
+                q.soldiers.push(s); soldiers.push(s); if (!quiet) assign(q); return s
+            }
+            function assign(q) { const n = q.soldiers.length; if (!n) return; const o = FORMS[q.form], c = Math.cos(q.facing), s = Math.sin(q.facing); let best = PERMS[n][0], bc = 1e9; for (const p of PERMS[n]) { let t = 0; for (let k = 0; k < n; k++) { const f = o[p[k]], m = q.soldiers[k], x = q.ax + f[0] * c - f[1] * s - m.x, y = q.ay + f[0] * s + f[1] * c - m.y; t += x * x + y * y } if (t < bc) { bc = t; best = p } } for (let k = 0; k < n; k++)q.soldiers[k].slot = best[k] }
+            function slots(q) { const o = FORMS[q.form], c = Math.cos(q.facing), s = Math.sin(q.facing); for (const m of q.soldiers) { const f = o[m.slot] || o[0]; let tx = q.ax + f[0] * c - f[1] * s, ty = q.ay + f[0] * s + f[1] * c; if (!segClear(q.ax, q.ay, tx, ty, .12)) { let ok = false; for (const k of [.66, .33]) { const ux = q.ax + (tx - q.ax) * k, uy = q.ay + (ty - q.ay) * k; if (segClear(q.ax, q.ay, ux, uy, .12)) { tx = ux; ty = uy; ok = true; break } } if (!ok) { tx = q.ax; ty = q.ay } } m.tx = tx; m.ty = ty } }
+            function moveTo(q, x, y, face) { const p = findPath(q.ax, q.ay, x, y); q.order = { type: 'move', x, y, face: face == null ? null : face }; q.path = p; q.ff = null; q.amove = false; if (p.length && hy(p[0].x - q.ax, p[0].y - q.ay) > .3) q.facing = q.want = Math.atan2(p[0].y - q.ay, p[0].x - q.ax); assign(q) }
+            function order(q, o) { q.order = o; q.path = []; q.rp = 0; q.ff = null; q.amove = false }
+            function upSquad(q, dt) {
+                q.gcd = Math.max(0, q.gcd - dt); q.alert = Math.max(0, q.alert - dt); q.rp -= dt;
+                const o = q.order;
+                if (o) {
+                    if (o.type === 'attack') { const t = o.target; if (!t.alive) { q.order = null; q.path = [] } else { const c = cent(t), d = hy(c.x - q.ax, c.y - q.ay); if (d <= 6 && los(q.ax, q.ay, c.x, c.y)) { q.path = []; q.ff = Math.atan2(c.y - q.ay, c.x - q.ax) } else if (q.rp <= 0) { q.rp = 1; q.path = findPath(q.ax, q.ay, c.x, c.y) } } }
+                    else if (o.type === 'nade') { const d = hy(o.x - q.ax, o.y - q.ay); if (d <= GR) { q.path = []; q.ff = Math.atan2(o.y - q.ay, o.x - q.ax); if (q.gcd <= 0) throwNade(q, o.x, o.y); q.order = null } else if (q.rp <= 0) { q.rp = 1.5; q.path = findPath(q.ax, q.ay, o.x, o.y) } }
+                    else if (o.type === 'move' && !q.path.length) q.order = null
+                }
+                let lag = 0; for (const s of q.soldiers) lag += hy(s.x - s.tx, s.y - s.ty); lag /= Math.max(1, q.soldiers.length);
+                if (q.path.length && !(q.amove && q.eng)) { const w = q.path[0], dx = w.x - q.ax, dy = w.y - q.ay, d = hy(dx, dy), sp = q.speed * (lag > 1.8 ? .25 : lag > 1 ? .65 : 1); if (d > .04) q.want = Math.atan2(dy, dx); if (d <= sp * dt) { q.ax = w.x; q.ay = w.y; q.path.shift(); if (!q.path.length && q.order && q.order.type === 'move') q.ff = q.order.face != null ? q.order.face : q.want } else { q.ax += dx / d * sp * dt; q.ay += dy / d * sp * dt } }
+                else if (q.ff != null) q.want = q.ff;
+                q.facing = turn(q.facing, q.want, 3.5 * dt); slots(q)
+            }
+            function collide(s) { const r = .2, ti = Math.floor(s.x), tj = Math.floor(s.y); for (let i = ti - 1; i <= ti + 1; i++)for (let j = tj - 1; j <= tj + 1; j++) { if (inb(i, j) && !block[j * N + i]) continue; const cx = cl(s.x, i, i + 1), cy = cl(s.y, j, j + 1), dx = s.x - cx, dy = s.y - cy, d2 = dx * dx + dy * dy; if (d2 >= r * r) continue; if (d2 > 1e-6) { const d = Math.sqrt(d2); s.x += dx / d * (r - d); s.y += dy / d * (r - d) } else { const l = s.x - i, rt = i + 1 - s.x, u = s.y - j, dd = j + 1 - s.y, m = Math.min(l, rt, u, dd); if (m === l) s.x = i - r; else if (m === rt) s.x = i + 1 + r; else if (m === u) s.y = j - r; else s.y = j + 1 + r } } s.x = cl(s.x, .25, N - .25); s.y = cl(s.y, .25, N - .25) }
+            function coverFor(t, sx, sy) { const ti = Math.floor(t.x), tj = Math.floor(t.y), dx = sx - t.x, dy = sy - t.y, d = hy(dx, dy) || 1; let best = null, bd = .35; for (let i = ti - 1; i <= ti + 1; i++)for (let j = tj - 1; j <= tj + 1; j++) { if (!inb(i, j) || !cover[j * N + i]) continue; const cx = i + .5 - t.x, cy = j + .5 - t.y, cd = hy(cx, cy) || .01; if (cd > 1.3) continue; const dot = (cx * dx + cy * dy) / (cd * d); if (dot > bd) { bd = dot; best = { x: i + .5, y: j + .5 } } } return best }
+            function nearCover(t) { const ti = Math.floor(t.x), tj = Math.floor(t.y); for (let i = ti - 1; i <= ti + 1; i++)for (let j = tj - 1; j <= tj + 1; j++)if (inb(i, j) && cover[j * N + i] && hy(i + .5 - t.x, j + .5 - t.y) < 1.3) return true; return false }
+            function pickT(s) { const o = s.sq.order, foc = o && o.type === 'attack' && o.target.alive ? o.target : null; let best = null, bd = 1e9; for (const e of soldiers) { if (e.team === s.team || e.dead) continue; const d = hy(e.x - s.x, e.y - s.y); if (d > s.w.range) continue; const sc = d - (e.sq === foc ? 6 : 0) - (e === s.target ? .8 : 0); if (sc < bd && los(s.x, s.y, e.x, e.y)) { bd = sc; best = e } } return best }
+            function upSoldier(s, dt) {
+                const q = s.sq, w = s.w; s.flash = Math.max(0, s.flash - dt); s.recoil *= Math.exp(-dt * 18); s.hitT = Math.max(0, s.hitT - dt);
+                let tx = s.tx, ty = s.ty;
+                if (hy(tx - s.x, ty - s.y) > .5 && !segClear(s.x, s.y, tx, ty, .1)) { s.pathT -= dt; if (!s.path || s.pathT <= 0) { s.path = findPath(s.x, s.y, tx, ty); s.pathT = .8 } if (s.path && s.path.length) { if (s.path.length > 1 && hy(s.path[0].x - s.x, s.path[0].y - s.y) < .25) s.path.shift(); tx = s.path[0].x; ty = s.path[0].y } } else s.path = null;
+                const dx = tx - s.x, dy = ty - s.y, d = hy(dx, dy); let vx = 0, vy = 0;
+                if (d > .06) { const v = Math.min(2.3 * (d > 1.2 ? 1.3 : 1) * (s.throwT > 0 ? .3 : 1), d * 3.5); vx = dx / d * v; vy = dy / d * v }
+                for (const o of soldiers) { if (o === s) continue; const ox = s.x - o.x, oy = s.y - o.y; if (ox > .5 || ox < -.5 || oy > .5 || oy < -.5) continue; const od = hy(ox, oy); if (od < .5 && od > 1e-4) { const p = (.5 - od) * 4 / od; vx += ox * p; vy += oy * p } }
+                const k = 1 - Math.exp(-dt * 10); s.vx += (vx - s.vx) * k; s.vy += (vy - s.vy) * k; s.x += s.vx * dt; s.y += s.vy * dt; collide(s);
+                const sp = hy(s.vx, s.vy); s.moving = sp > .35; if (s.moving) s.walk += sp * dt * 9;
+                if ((s.covT -= dt) <= 0) { s.covT = .3; s.cov = nearCover(s) }
+                if (s.target && (s.target.dead || hy(s.target.x - s.x, s.target.y - s.y) > w.range + .4)) s.target = null;
+                if ((s.scan -= dt) <= 0) { s.scan = R0(.25, .45); const pr = s.target; s.target = pickT(s); if (s.target && !pr) s.cool = Math.max(s.cool, R0(.15, .5)) }
+                if (s.throwT > 0) { s.throwT += dt; if (!s.thrown && s.throwT > .25) { s.thrown = true; spawnNade(s, s.tp) } if (s.throwT > .55) s.throwT = 0 }
+                let want = s.moving ? Math.atan2(s.vy, s.vx) : q.facing;
+                if (s.reload > 0) { s.reload -= dt; if (s.reload <= 0) s.mag = w.mag }
+                if (s.target && s.throwT <= 0) {
+                    const e = s.target; want = Math.atan2(e.y - s.y, e.x - s.x); s.aim = turn(s.aim, want, 10 * dt);
+                    if (s.reload <= 0 && Math.abs(ad(s.aim, want)) < .2) { s.cool -= dt; if (s.cool <= 0) { fire(s, e); s.mag--; s.burst--; if (s.mag <= 0) { s.reload = w.rt; s.burst = w.burst; s.cool = R0(.2, .4) } else if (s.burst <= 0) { s.burst = w.burst; s.cool = R0(w.c0, w.c1) } else s.cool = w.iv } }
+                }
+                else { s.aim = turn(s.aim, s.throwT > 0 && s.tp ? Math.atan2(s.tp.y - s.y, s.tp.x - s.x) : want, 6 * dt); if (s.reload <= 0 && s.mag < w.mag * .4) s.reload = w.rt }
+            }
+            function P(o) { if (parts.length < 1400) parts.push(o) }
+            function puff(x, y, z, n, c) { for (let k = 0; k < n; k++)P({ t: 0, x: x + R0(-.08, .08), y: y + R0(-.08, .08), z, vx: R0(-.4, .4), vy: R0(-.4, .4), vz: R0(10, 35), dr: 3, life: R0(.35, .6), max: .6, s: 1, gr: 3.5, a: .6, c }); for (let k = 0; k < 2; k++)P({ t: 6, x, y, z, vx: R0(-1, 1), vy: R0(-1, 1), vz: R0(40, 80), g: 300, bn: 0, life: .4, max: .4, c: '#5a4a35', rot: R0(0, 6), vr: 10 }) }
+            function fire(s, e) {
+                const w = s.w, dx = e.x - s.x, dy = e.y - s.y, d = hy(dx, dy) || .1, ax = dx / d, ay = dy / d;
+                let acc = w.acc * (1.25 - .55 * d / w.range) * (s.moving ? .55 : 1) * (e.moving ? .85 : 1) * (s.team ? .88 : 1);
+                const cvr = coverFor(e, s.x, s.y); if (cvr) acc *= .45; acc = cl(acc, .05, .92);
+                const hit = Math.random() < acc; let ex, ey, ez, cov = null;
+                if (hit) { ex = e.x; ey = e.y; ez = 11 } else if (cvr && Math.random() < .6) { ex = cvr.x + R0(-.25, .25); ey = cvr.y + R0(-.25, .25); ez = 7; cov = cvr } else { const sp = R0(-.9, .9), ov = R0(.3, 2.2); ex = e.x + ax * ov - ay * sp; ey = e.y + ay * ov + ax * sp; ez = 0 }
+                const x0 = s.x + ax * .32, y0 = s.y + ay * .32, len = hy(ex - x0, ey - y0) || .1;
+                bullets.push({ x0, y0, z0: 14, x1: ex, y1: ey, z1: ez, t: 0, dur: len / 42, len, team: s.team, hit, e, dmg: w.dmg * R0(.85, 1.15), src: s, cov });
+                s.flash = .06; s.recoil = 1;
+                P({ t: 4, x: x0, y: y0, z: 13, vx: -ay * R0(.8, 1.6) + R0(-.2, .2), vy: ax * R0(.8, 1.6) + R0(-.2, .2), vz: R0(50, 90), g: 420, bn: 2, life: 2.2, max: 2.2, rot: R0(0, 6), vr: R0(-20, 20) });
+                if (s.burst === w.burst) P({ t: 0, x: x0 + ax * .15, y: y0 + ay * .15, z: 14, vx: ax * .3, vy: ay * .3, vz: 6, dr: 1.5, life: .9, max: .9, s: 2, gr: 5, a: .35, c: '#d4d4cc' });
+                sfxShot(s.x, s.y, s.role === 'lmg')
+            }
+            function upBullets(dt) {
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const b = bullets[i]; b.t += dt; if (b.t < b.dur) continue; bullets.splice(i, 1);
+                    const dx = (b.x1 - b.x0) / b.len, dy = (b.y1 - b.y0) / b.len;
+                    if (b.hit) { if (!b.e.dead) { const e = b.e; damage(e, b.dmg, b.src, dx, dy); for (let k = 0; k < 5; k++)P({ t: 3, x: e.x, y: e.y, z: R0(9, 13), vx: dx * R0(.5, 1.5) + R0(-.4, .4), vy: dy * R0(.5, 1.5) + R0(-.4, .4), vz: R0(20, 60), g: 300, life: R0(.3, .5), max: .5, s: R0(1, 1.8), c: Math.random() < .5 ? '#7a1a12' : '#a3261b' }) } }
+                    else if (b.cov) { puff(b.x1, b.y1, b.z1, 3, '#b9a77c'); for (let k = 0; k < 3; k++)P({ t: 2, x: b.x1, y: b.y1, z: b.z1, vx: -dx * R0(1, 3) + R0(-1.5, 1.5), vy: -dy * R0(1, 3) + R0(-1.5, 1.5), vz: R0(30, 90), g: 200, life: R0(.12, .22), max: .22 }) }
+                    else puff(b.x1, b.y1, 0, 4, '#8f7d5a')
+                }
+            }
+            function damage(t, dmg, src, dx, dy, bl) { if (t.dead) return; t.hp -= dmg; t.hitT = .12; const q = t.sq; q.alert = 6; if (src && src.sq && src.sq.alive && src.team !== t.team) q.att = src.sq; if (t.hp <= 0) kill(t, dx, dy, bl || 0) }
+            function kill(t, dx, dy, bl) { t.dead = true; t.deadT = 0; t.hp = 0; t.target = null; t.fd = (dx - dy) >= 0 ? 1 : -1; t.fvz = bl ? R0(90, 160) * bl : 0; t.fz = bl ? .1 : 0; t.fvx = dx * bl * 2.2; t.fvy = dy * bl * 2.2; corpses.push(t); if (t.team === 1) { cp += 15; kills++ } }
+            function throwNade(q, x, y) { let th = null, bd = 1e9; for (const s of q.soldiers) { const d = hy(s.x - x, s.y - y); if (d < bd && s.throwT <= 0) { bd = d; th = s } } if (!th) return; th.throwT = .001; th.thrown = false; th.tp = { x, y }; q.gcd = q.team ? R0(24, 32) : 18 }
+            function spawnNade(s, t) { const d = hy(t.x - s.x, t.y - s.y); nades.push({ nade: true, x0: s.x, y0: s.y, x1: t.x + R0(-1, 1) * d * .06, y1: t.y + R0(-1, 1) * d * .06, x: s.x, y: s.y, z: 18, t: 0, dur: .55 + d * .07, h: 26 + d * 7, landed: false, fuse: .55, vx: 0, vy: 0, team: s.team, src: s }) }
+            function upNades(dt) { for (let i = nades.length - 1; i >= 0; i--) { const g = nades[i]; if (!g.landed) { g.t += dt; const f = Math.min(1, g.t / g.dur); g.x = g.x0 + (g.x1 - g.x0) * f; g.y = g.y0 + (g.y1 - g.y0) * f; g.z = 18 * (1 - f) + g.h * 4 * f * (1 - f); if (f >= 1) { g.landed = true; g.z = 0; const L = hy(g.x1 - g.x0, g.y1 - g.y0) || 1; g.vx = (g.x1 - g.x0) / L * .9; g.vy = (g.y1 - g.y0) / L * .9; puff(g.x, g.y, 0, 3, '#8f7d5a') } } else { g.fuse -= dt; const nx = g.x + g.vx * dt, ny = g.y + g.vy * dt; if (bp(nx, ny)) { g.vx = g.vy = 0 } else { g.x = nx; g.y = ny } const k = Math.exp(-5 * dt); g.vx *= k; g.vy *= k; if (g.fuse <= 0) { nades.splice(i, 1); explode(g.x, g.y, g.src) } } } }
+            function explode(x, y, src) {
+                for (const s of soldiers) { if (s.dead) continue; const d = hy(s.x - x, s.y - y); if (d >= 2.4 || !los(x, y, s.x, s.y)) continue; const nx = d ? (s.x - x) / d : 1, ny = d ? (s.y - y) / d : 0; damage(s, 125 * Math.pow(1 - d / 2.4, .7) * (coverFor(s, x, y) ? .6 : 1), src, nx, ny, 1.3 - d / 2.4); if (!s.dead) { s.vx += nx * 2.5; s.vy += ny * 2.5 } }
+                for (let k = 0; k < 14; k++)P({ t: 5, x, y, z: R0(2, 10), vx: R0(-1.5, 1.5), vy: R0(-1.5, 1.5), vz: R0(20, 90), dr: 3, life: R0(.35, .6), max: .6, s: R0(6, 10) });
+                for (let k = 0; k < 12; k++)P({ t: 0, x: x + R0(-.4, .4), y: y + R0(-.4, .4), z: R0(4, 14), vx: R0(-.6, .6), vy: R0(-.6, .6), vz: R0(15, 35), dr: 1, life: R0(1.4, 2.4), max: 2.4, s: 6, gr: 16, a: .55, c: Math.random() < .5 ? '#4a4844' : '#64605a' });
+                for (let k = 0; k < 16; k++)P({ t: 6, x, y, z: 4, vx: R0(-3, 3), vy: R0(-3, 3), vz: R0(80, 200), g: 420, bn: 1, life: R0(.9, 1.4), max: 1.4, c: '#4a3a28', rot: R0(0, 6), vr: R0(-15, 15) });
+                for (let k = 0; k < 14; k++)P({ t: 2, x, y, z: 6, vx: R0(-6, 6), vy: R0(-6, 6), vz: R0(40, 160), g: 300, life: R0(.25, .45), max: .45 });
+                for (let k = 0; k < 10; k++) { const a = R0(0, TAU); P({ t: 0, x, y, z: 2, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, vz: 4, dr: 4, life: .8, max: .8, s: 4, gr: 10, a: .45, c: '#8c7b5a' }) }
+                rings.push({ x, y, t: 0, dur: .4 }); lights.push({ x, y, t: 0, dur: .35, r: 100 }); scorch(x, y);
+                const sx = ix(x, y) * cam.z + OX, sy = iy(x, y) * cam.z + OY; shake = Math.min(1, shake + .7 * cl(1.2 - hy(sx - W / 2, sy - H / 2) / W, 0, 1)); sfxBoom(x, y)
+            }
+            function think(q) {
+                const c = cent(q); let best = null, bd = 1e9;
+                for (const s of soldiers) { if (s.team || s.dead) continue; const d = hy(s.x - c.x, s.y - c.y); if (d < DETECT && d < bd && los(c.x, c.y, s.x, s.y)) { bd = d; best = s } }
+                if (q.ai === 'guard') {
+                    const hd = hy(c.x - q.home.x, c.y - q.home.y);
+                    if (!q.eng && !q.alert) for (const o of squads) if (o !== q && o.team === 1 && o.alert > 0 && o.att && o.att.alive && hy(o.ax - q.ax, o.ay - q.ay) < 10) { q.alert = 4; q.att = o.att; break }
+                    const a = q.att && q.att.alive && q.alert > 0 ? q.att : null;
+                    if (q.eng) { if (q.order && q.order.type === 'move') { q.order = null; q.path = [] } }
+                    else if (a) { const ac = cent(a); if (hy(ac.x - q.home.x, ac.y - q.home.y) < LEASH) { if (!q.order || q.order.target !== a) order(q, { type: 'attack', target: a }) } else if (hd > 1.5 && (!q.order || q.order.type !== 'move')) moveTo(q, q.home.x, q.home.y, q.home.f) }
+                    else if (hd > 1.5) { if (!q.order || q.order.type !== 'move') moveTo(q, q.home.x, q.home.y, q.home.f) }
+                    else if (!q.order) q.ff = q.home.f;
+                    if (q.order && q.order.type === 'attack' && hd > LEASH) moveTo(q, q.home.x, q.home.y, q.home.f)
+                }
+                else { if (best) { if (!q.order || q.order.target !== best.sq) order(q, { type: 'attack', target: best.sq }) } else if (!q.order || (q.order.type === 'attack' && hy(cent(q.order.target).x - c.x, cent(q.order.target).y - c.y) > DETECT + 4)) { moveTo(q, q.goal.x, q.goal.y, null); q.amove = true } }
+                if (q.gcd <= 0 && eNade <= 0 && best && bd < GR + .5) { const t = best.sq, tc = cent(t); let n = 0; for (const s of t.soldiers) if (hy(s.x - tc.x, s.y - tc.y) < 2) n++; if (n >= 2 && hy(tc.x - c.x, tc.y - c.y) <= GR && Math.random() < .5) { throwNade(q, tc.x + R0(-.6, .6), tc.y + R0(-.6, .6)); eNade = 8 } }
+            }
+            function spawnWave() { const n = WAVES[waveI++]; for (let k = 0; k < n; k++) { const sp = SPAWNS[(waveI + k) % 2], q = makeSquad(1, sp.x, sp.y, 'assault', PI / 4); q.goal = { x: PHQ.x - 1, y: PHQ.y - 1 }; moveTo(q, q.goal.x, q.goal.y, null); q.amove = true } msg(n > 1 ? 'Two enemy squads inbound' : 'Enemy squad inbound', '#ffb36b') }
+            function msg(text, c) { msgs.unshift({ text, c: c || '#e8f0e0', t: 4.5 }); if (msgs.length > 4) msgs.pop() }
+            const clock = () => { const t = Math.floor(gt); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') };
+            function cleanup() {
+                for (let i = soldiers.length - 1; i >= 0; i--)if (soldiers[i].dead) soldiers.splice(i, 1);
+                for (const q of squads) { if (!q.alive) continue; const n = q.soldiers.length; q.soldiers = q.soldiers.filter(s => !s.dead); if (q.soldiers.length !== n && q.soldiers.length) assign(q); if (!q.soldiers.length) { q.alive = false; sel.delete(q); if (!q.team) msg('Squad ' + q.name + ' lost', '#ff8a7a') } q.eng = q.soldiers.some(s => s.target && !s.target.dead) }
+                squads = squads.filter(q => q.alive)
+            }
+            function capture(dt) { for (const f of flags) { let own = 0, foe = 0; for (const s of soldiers) { const d = hy(s.x - f.x, s.y - f.y); if (s.team === f.team) { if (d < 4) own++ } else if (d < CAPR) foe++ } if (foe && !own) f.cap = Math.min(1, f.cap + dt / CAPT); else if (!foe) f.cap = Math.max(0, f.cap - dt / (CAPT * 1.5)) } }
+            function reinforce(dt) { for (const q of squads) { if (q.team || q.soldiers.length >= 5) { q.rein = 0; continue } const c = cent(q); if (hy(c.x - PHQ.x, c.y - PHQ.y) < 5.5) { if ((q.rein += dt) >= 3) { q.rein = 0; addSoldier(q, PHQ.x + R0(-.4, .4), PHQ.y + R0(-.4, .4)) } } else q.rein = 0 } }
+            function checkEnd() { const ea = squads.some(q => q.team), pa = squads.some(q => !q.team); if (flags[1].cap >= 1 || (!ea && waveI >= WAVES.length)) end(true); else if (flags[0].cap >= 1 || (!pa && cp < COST)) end(false) }
+            function end(win) { state = win ? 'won' : 'lost'; showOv(win ? 'Victory' : 'Defeat', win ? 'Enemy HQ secured in ' + clock() + ' with ' + kills + ' kills.' : 'Your forces fell at ' + clock() + ' after ' + kills + ' kills.', win ? 'Play again' : 'Try again') }
+            function update(dt) {
+                gt += dt; cp += dt * 1.5; if ((shotT -= dt) <= 0) { shotT = .25; shotB = 6 } eNade -= dt;
+                if (waveI < WAVES.length && (waveT -= dt) <= 0) { if (squads.filter(q => q.team).length < 10) { spawnWave(); waveT = 55 } else waveT = 15 }
+                for (const q of squads) if (q.team && (q.think -= dt) <= 0) { q.think = R0(.35, .55); think(q) }
+                for (const q of squads) upSquad(q, dt);
+                for (const s of soldiers) if (!s.dead) upSoldier(s, dt);
+                upBullets(dt); upNades(dt);
+                for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; if ((p.life -= dt) <= 0) { parts[i] = parts[parts.length - 1]; parts.pop(); continue } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; if (p.g) { p.vz -= p.g * dt; if (p.z < 0) { p.z = 0; if (p.bn > 0) { p.vz = -p.vz * .35; p.vx *= .5; p.vy *= .5; p.bn-- } else p.vz = p.vx = p.vy = 0 } } if (p.dr) { const k = Math.exp(-p.dr * dt); p.vx *= k; p.vy *= k; p.vz *= k } if (p.vr) p.rot += p.vr * dt }
+                for (const a of [rings, lights, marks]) for (let i = a.length - 1; i >= 0; i--)if ((a[i].t += dt) >= a[i].dur) a.splice(i, 1);
+                for (const c of corpses) { c.deadT += dt; if (c.fz > 0) { c.fvz -= 520 * dt; c.fz += c.fvz * dt; const nx = c.x + c.fvx * dt, ny = c.y + c.fvy * dt; if (!bp(nx, ny)) { c.x = nx; c.y = ny } if (c.fz <= 0) { c.fz = 0; puff(c.x, c.y, 0, 3, '#8f7d5a') } } if (!c.decal && c.deadT > .45 && c.fz === 0) { c.decal = true; blood(c) } }
+                corpses = corpses.filter(c => c.deadT < 14);
+                for (const m of msgs) m.t -= dt; msgs = msgs.filter(m => m.t > 0);
+                cleanup(); capture(dt); reinforce(dt);
+                if ((visT -= dt) <= 0) { visT = .2; updVis() }
+                checkEnd()
+            }
+            const fogC = document.createElement('canvas'); fogC.width = fogC.height = N; const fogX = fogC.getContext('2d'), fogI = fogX.createImageData(N, N);
+            function reveal(x, y, r) { const ci = Math.floor(x), cj = Math.floor(y), R = Math.ceil(r); for (let b = -R; b <= R; b++)for (let a = -R; a <= R; a++) { if (a * a + b * b > r * r) continue; const i = ci + a, j = cj + b; if (!inb(i, j)) continue; const k = j * N + i; if (vis[k] === 2) continue; if (los(x, y, i + .5, j + .5)) vis[k] = 2 } }
+            function updVis() { for (let k = 0; k < NN; k++)if (vis[k] === 2) vis[k] = 1; for (const s of soldiers) if (!s.team) reveal(s.x, s.y, SIGHT); reveal(PHQ.x, PHQ.y, 7); const d = fogI.data; for (let k = 0; k < NN; k++) { d[k * 4] = 10; d[k * 4 + 1] = 14; d[k * 4 + 2] = 22; d[k * 4 + 3] = vis[k] === 2 ? 0 : vis[k] ? 92 : 150 } fogX.putImageData(fogI, 0, 0) }
+            const gc = document.createElement('canvas'); gc.width = N * 64; gc.height = N * 32; const gx = gc.getContext('2d');
+            function scorch(x, y) { gx.save(); gx.translate(ix(x, y) + GOX, iy(x, y)); gx.scale(1, .5); const r = gx.createRadialGradient(0, 0, 2, 0, 0, 30); r.addColorStop(0, 'rgba(20,16,12,.75)'); r.addColorStop(.6, 'rgba(30,24,18,.35)'); r.addColorStop(1, 'rgba(30,24,18,0)'); gx.fillStyle = r; gx.beginPath(); gx.arc(0, 0, 30, 0, TAU); gx.fill(); gx.restore() }
+            function blood(c) { gx.save(); gx.globalAlpha = .32; gx.fillStyle = '#5a1a14'; gx.beginPath(); gx.ellipse(ix(c.x, c.y) + GOX + c.fd * 7, iy(c.x, c.y), 6, 2.6, 0, 0, TAU); gx.fill(); gx.restore() }
+            function paintGround() {
+                const g = gx, r = mul(4242), nz = noise(5); g.clearRect(0, 0, gc.width, gc.height);
+                const dia = (i, j, col, s) => { s = s || 1; const cx = (i - j) * HW + GOX, cy = (i + j + 1) * HH; g.beginPath(); g.moveTo(cx, cy - HH * s); g.lineTo(cx + HW * s, cy); g.lineTo(cx, cy + HH * s); g.lineTo(cx - HW * s, cy); g.closePath(); g.fillStyle = col; g.fill(); g.strokeStyle = col; g.lineWidth = 1; g.stroke() };
+                for (let j = 0; j < N; j++)for (let i = 0; i < N; i++)dia(i, j, mix([92, 122, 58], [124, 150, 74], nz(i * .2, j * .2) * .75 + r() * .25));
+                for (const [rx, ry, col] of [[46, 23, 'rgb(116,102,72)'], [40, 20, 'rgb(150,129,93)']]) for (const s of SEGS) { const L = hy(s[2] - s[0], s[3] - s[1]); g.fillStyle = col; for (let t = 0; t <= L; t += .3) { const x = s[0] + (s[2] - s[0]) * t / L, y = s[1] + (s[3] - s[1]) * t / L; g.beginPath(); g.ellipse(ix(x, y) + GOX, iy(x, y), rx, ry, 0, 0, TAU); g.fill() } }
+                for (let k = 0; k < NN; k++)if (ground[k] >= 2) dia(k % N, (k / N) | 0, '#b9a77c', 1.3);
+                for (let k = 0; k < NN; k++)if (ground[k] >= 2) { const i = k % N, j = (k / N) | 0; dia(i, j, mix([46, 88, 118], [66, 114, 144], cl(Math.abs(i + j + 1 - rv(i - j)) / 1.9, 0, 1))) }
+                for (const b of BR) {
+                    const v = rv(b), cx = (b + v) / 2, cy = (v - b) / 2, Q = (a, l) => [ix(cx + a + l, cy + a - l) + GOX, iy(cx + a + l, cy + a - l)], A = 1.85, L = .82;
+                    const poly = (pts, col, oy) => { g.beginPath(); pts.forEach((p, n) => n ? g.lineTo(p[0], p[1] + oy) : g.moveTo(p[0], p[1] + oy)); g.closePath(); g.fillStyle = col; g.fill() };
+                    const pts = [Q(-A, -L), Q(-A, L), Q(A, L), Q(A, -L)]; poly(pts, 'rgba(0,0,0,.28)', 5); poly(pts, '#8a6a45', 0);
+                    g.strokeStyle = 'rgba(60,42,25,.55)'; g.lineWidth = 1; for (let a = -A + .12; a < A; a += .2) { const p = Q(a, -L), q = Q(a, L); g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke() }
+                    g.strokeStyle = '#5a4128'; g.lineWidth = 2.4; for (const l of [-L, L]) { const p = Q(-A, l), q = Q(A, l); g.beginPath(); g.moveTo(p[0], p[1] - 2); g.lineTo(q[0], q[1] - 2); g.stroke() }
+                }
+                for (let n = 0; n < 2600; n++) { const x = r() * N, y = r() * N, k = (y | 0) * N + (x | 0); if (ground[k]) continue; const sx = ix(x, y) + GOX, sy = iy(x, y); g.strokeStyle = r() < .5 ? 'rgba(40,64,26,.55)' : 'rgba(170,196,110,.4)'; g.lineWidth = 1; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx - 1, sy - 3); g.moveTo(sx + 1.5, sy); g.lineTo(sx + 2.5, sy - 2.5); g.stroke() }
+                for (let n = 0; n < 160; n++) { const x = r() * N, y = r() * N, k = (y | 0) * N + (x | 0); if (ground[k]) continue; g.fillStyle = ['#e8d36a', '#f2f0e6', '#c98ad8'][n % 3]; g.fillRect(ix(x, y) + GOX, iy(x, y), 1.6, 1.6) }
+                for (let n = 0; n < 500; n++) { const x = r() * N, y = r() * N, k = (y | 0) * N + (x | 0); if (ground[k] !== 1) continue; g.fillStyle = r() < .5 ? 'rgba(90,76,55,.6)' : 'rgba(190,170,130,.5)'; g.fillRect(ix(x, y) + GOX, iy(x, y), 2, 1.2) }
+            }
+            let mmB = null;
+            function mkMM() { mmB = document.createElement('canvas'); mmB.width = 300; mmB.height = 150; const g = mmB.getContext('2d'), s = 300 / gc.width; g.drawImage(gc, 0, 0, 300, 150); for (const o of statics) if (o.t === 'bld' || o.t === 'tree') { g.fillStyle = o.t === 'bld' ? '#d8d0bd' : '#24421f'; g.fillRect((o.sx + GOX) * s - 2, o.sy * s - 1.5, 4, 3) } }
+            function spr(w, h, fn) { const c = document.createElement('canvas'); c.width = w * 2; c.height = h * 2; const g = c.getContext('2d'); g.scale(2, 2); fn(g); return c }
+            const GLOW = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,230,170,1)'); r.addColorStop(.35, 'rgba(255,170,70,.55)'); r.addColorStop(1, 'rgba(255,120,40,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); return c })();
+            const TREES = [0, 1, 2].map(v => spr(72, 88, g => {
+                g.fillStyle = 'rgba(0,0,0,.26)'; ell(g, 40, 79, 21, 8.5); g.fill();
+                if (v === 2) { g.fillStyle = '#4a3322'; g.fillRect(34, 60, 4, 19); for (const [b, w, h] of [[66, 21, 24], [52, 17, 22], [38, 13, 20], [26, 8, 16]]) { g.fillStyle = '#22452a'; g.beginPath(); g.moveTo(36, b - h); g.lineTo(36 + w, b); g.lineTo(36 - w, b); g.closePath(); g.fill(); g.fillStyle = '#2f5d36'; g.beginPath(); g.moveTo(36, b - h); g.lineTo(36 - w * .85, b - 1); g.lineTo(36 - w * .1, b - 1); g.closePath(); g.fill() } }
+                else {
+                    g.fillStyle = '#553a26'; g.fillRect(33, 50, 6, 29); g.fillStyle = '#3e2a1b'; g.fillRect(36, 50, 3, 29); const bl = v ? [[36, 46, 15], [26, 38, 12], [46, 39, 12], [36, 28, 12]] : [[36, 42, 17], [23, 47, 12], [49, 47, 12], [29, 31, 12], [44, 31, 12]];
+                    for (const [c, o, s] of [['#2b5026', 0, 1], ['#3a6a30', .25, .72], ['#4f8a3c', .42, .36]]) { g.fillStyle = c; for (const [x, y, r] of bl) { g.beginPath(); g.arc(x - r * o * .9, y - r * o * 1.1, r * s, 0, TAU); g.fill() } }
+                }
+            }));
+            const ROCKS = [0, 1].map(v => spr(48, 32, g => { const r = mul(91 + v * 7), pts = []; g.fillStyle = 'rgba(0,0,0,.25)'; ell(g, 26, 23, 16, 6.5); g.fill(); for (let k = 0; k < 9; k++) { const a = k / 9 * TAU, q = .75 + r() * .3; pts.push([24 + Math.cos(a) * 13 * q, 19 + Math.sin(a) * 7 * q - (Math.sin(a) < 0 ? 5 * q : 0)]) } const pa = () => { g.beginPath(); pts.forEach((p, n) => n ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath() }; pa(); g.fillStyle = '#7b786f'; g.fill(); g.save(); pa(); g.clip(); g.fillStyle = '#9a968b'; ell(g, 21, 12, 11, 6); g.fill(); g.fillStyle = '#5f5c55'; ell(g, 30, 24, 14, 5); g.fill(); g.restore(); pa(); g.strokeStyle = '#55524c'; g.lineWidth = .8; g.stroke() }));
+            const bagC = new Map();
+            function bagSpr(m) {
+                let c = bagC.get(m); if (c) return c; c = spr(80, 52, g => {
+                    const pos = [[0, 0]]; for (let k = 0; k < 8; k++)if (m & 1 << k) { const L = hy(DI[k], DJ[k]); for (let t = .3; t <= L * .5 + .01; t += .3)pos.push([DI[k] / L * t, DJ[k] / L * t]) } pos.sort((a, b) => a[0] + a[1] - b[0] - b[1]); g.fillStyle = 'rgba(0,0,0,.22)'; for (const [x, y] of pos) { ell(g, 42 + (x - y) * HW, 31 + (x + y) * HH, 8, 3.8); g.fill() }
+                    for (const [x, y] of pos) for (let l = 0; l < 2; l++) { const bx = 40 + (x - y) * HW, by = 30 + (x + y) * HH - 3 - l * 5; ell(g, bx, by, 7, 3.6); g.fillStyle = l ? '#c2aa79' : '#a89060'; g.fill(); g.strokeStyle = '#6e5b3b'; g.lineWidth = .8; g.stroke(); ell(g, bx - 1.6, by - 1.2, 3.2, 1.3); g.fillStyle = 'rgba(255,244,214,.28)'; g.fill() }
+                }); bagC.set(m, c); return c
+            }
+            function drawSoldier(s) {
+                const P = PAL[s.team]; let px = ix(s.x, s.y), py = iy(s.x, s.y);
+                const ca = Math.cos(s.aim), sa = Math.sin(s.aim); let fx = ca - sa, fy = (ca + sa) * .5; const fl = hy(fx, fy) || 1; fx /= fl; fy /= fl;
+                ctx.save();
+                if (s.dead) { const k = Math.min(1, s.deadT / .4), e = 1 - (1 - k) * (1 - k); if (s.deadT > 12) ctx.globalAlpha = Math.max(0, 1 - (s.deadT - 12) / 2); ctx.fillStyle = 'rgba(0,0,0,.22)'; ell(ctx, px + s.fd * 8 * e, py, 6 + 6 * e, 3); ctx.fill(); ctx.translate(px, py - s.fz); ctx.rotate(s.fd * e * 1.45); ctx.scale(1 - .35 * e, 1); px = 0; py = 0 }
+                else { ctx.fillStyle = 'rgba(0,0,0,.3)'; ell(ctx, px, py, 6.5, 3.2); ctx.fill() }
+                const mv = s.moving && !s.dead, sw = mv ? Math.sin(s.walk) : 0, bob = mv ? Math.abs(Math.cos(s.walk)) * .9 : 0;
+                let mx = 0, my = 0; if (mv) { const a = s.vx - s.vy, b = (s.vx + s.vy) * .5, l = hy(a, b) || 1; mx = a / l; my = b / l }
+                const f1x = px - 1.9 + mx * sw * 3.2, f1y = py - .6 + my * sw * 1.6 - Math.max(0, sw) * 1.4, f2x = px + 1.9 - mx * sw * 3.2, f2y = py - .6 - my * sw * 1.6 - Math.max(0, -sw) * 1.4;
+                ctx.lineCap = 'round'; ctx.strokeStyle = P.p; ctx.lineWidth = 2.7; ctx.beginPath(); ctx.moveTo(px - 1.7, py - 8); ctx.lineTo(f1x, f1y); ctx.moveTo(px + 1.7, py - 8); ctx.lineTo(f2x, f2y); ctx.stroke();
+                ctx.fillStyle = '#2a2622'; circ(f1x, f1y, 1.4); circ(f2x, f2y, 1.4);
+                const rc = s.recoil, bx = px - fx * rc * 1.3, by = py - 13 - bob - fy * rc * .8, away = fy < -.2;
+                const aiming = !s.dead && s.reload <= 0 && s.throwT <= 0 && (!!s.target || s.flash > 0);
+                let gx2 = fx, gy2 = fy; if (!aiming) { gx2 = fx * .8; gy2 = fy * .45 + .75; const l = hy(gx2, gy2) || 1; gx2 /= l; gy2 /= l }
+                const lmg = s.role === 'lmg', shX = bx + fx * 1.5, shY = by - 1.5 + (aiming ? -.5 : 1.5), bk = lmg ? 4.5 : 3.5, g0x = shX - gx2 * bk, g0y = shY - gy2 * bk, fw = (lmg ? 12 : 10.5) - rc * 2.6, g1x = shX + gx2 * fw, g1y = shY + gy2 * fw;
+                const gun = () => {
+                    ctx.strokeStyle = P.u2; ctx.lineWidth = 2.1; ctx.beginPath(); ctx.moveTo(bx - 3, by - 2.5); ctx.lineTo(shX + gx2 * 4.5, shY + gy2 * 4.5); ctx.moveTo(bx + 3, by - 2.5); ctx.lineTo(shX - gx2 * .5, shY - gy2 * .5); ctx.stroke();
+                    ctx.strokeStyle = '#1f2124'; ctx.lineWidth = lmg ? 2.6 : 1.9; line(g0x, g0y, g1x, g1y); ctx.strokeStyle = '#5a4430'; ctx.lineWidth = lmg ? 2.8 : 2.3; line(g0x, g0y, g0x + gx2 * 3, g0y + gy2 * 3);
+                    if (lmg) { ctx.fillStyle = '#2b2e31'; ctx.fillRect(shX + gx2 * 3 - 1.5, shY + gy2 * 3, 3, 3.2) }
+                    ctx.fillStyle = s.skin; circ(shX + gx2 * 4.5, shY + gy2 * 4.5, 1.2); circ(shX - gx2 * .5, shY - gy2 * .5, 1.2)
+                };
+                const pack = () => { ctx.fillStyle = P.k; ctx.fillRect(bx - fx * 3.4 - 2.6, by - fy * 1.5 - 3.5, 5.2, 6.2) };
+                if (!away) pack(); if (away) gun();
+                ctx.fillStyle = s.hitT > 0 ? '#d9786c' : P.u; ell(ctx, bx, by, 4.3, 5.2); ctx.fill();
+                ctx.strokeStyle = P.u2; ctx.lineWidth = .9; line(bx - 3.2, by - 3, bx + 3, by + 2.5);
+                if (P.b) { ctx.fillStyle = P.b; ctx.fillRect(bx + (fx > 0 ? -4.6 : 2.4), by - 3, 2.2, 2) }
+                if (away) pack();
+                const hx = bx + fx * .7, hy2 = by - 7.4;
+                if (!away) { ctx.fillStyle = s.skin; circ(hx + fx * .6, hy2 + .6, 2.7) }
+                ctx.fillStyle = P.h; ctx.beginPath(); ctx.ellipse(hx, hy2 - .8, 3.7, away ? 3.4 : 3, 0, PI, TAU); if (away) ctx.ellipse(hx, hy2 - .8, 3.7, 2.6, 0, 0, PI); ctx.fill();
+                ell(ctx, hx, hy2 - .6, 4.1, 1.2); ctx.fill();
+                if (s.role === 'sgt') { ctx.fillStyle = '#e8c547'; ctx.fillRect(hx - 1.5, hy2 - 3.6, 3, 1) }
+                if (s.throwT > 0) { const t = Math.min(1, s.throwT / .55), th = 2.4 - 2.8 * t, hx3 = bx + fx * 6 * Math.cos(th), hy3 = by - 3 + fy * 3 * Math.cos(th) - 6 * Math.sin(th); ctx.strokeStyle = P.u2; ctx.lineWidth = 2.1; line(bx + fx, by - 3, hx3, hy3); if (!s.thrown) { ctx.fillStyle = '#3b4a2a'; circ(hx3, hy3, 1.8) } }
+                if (!away) gun();
+                if (s.flash > 0 && !s.dead) {
+                    const k = s.flash / .06, a = g1x + gx2 * 1.5, b = g1y + gy2 * 1.5, L = (lmg ? 9 : 7) + Math.random() * 5, sd = 3.5 + Math.random() * 2;
+                    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .85 * k; ctx.drawImage(GLOW, a - 10, b - 10, 20, 20); ctx.globalAlpha = 1;
+                    ctx.fillStyle = 'rgba(255,236,170,' + (.95 * k) + ')'; ctx.beginPath(); ctx.moveTo(a + gx2 * L, b + gy2 * L); ctx.lineTo(a - gy2 * 2.4, b + gx2 * 2.4); ctx.lineTo(a - gx2 * 1.5, b - gy2 * 1.5); ctx.lineTo(a + gy2 * 2.4, b - gx2 * 2.4); ctx.closePath(); ctx.fill();
+                    ctx.strokeStyle = 'rgba(255,200,110,' + (.8 * k) + ')'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(a + (gx2 * .5 - gy2) * sd, b + (gy2 * .5 + gx2) * sd); ctx.moveTo(a, b); ctx.lineTo(a + (gx2 * .5 + gy2) * sd, b + (gy2 * .5 - gx2) * sd); ctx.stroke();
+                    ctx.fillStyle = 'rgba(255,255,255,' + k + ')'; circ(a, b, 1.4); ctx.globalCompositeOperation = 'source-over'
+                }
+                ctx.restore()
+            }
+            function drawBld(o) {
+                const b = o.b, i = o.i, j = o.j, h = b.ht, P = b.P, inB = (a, c) => a >= b.i0 && a < b.i0 + b.w && c >= b.j0 && c < b.j0 + b.h;
+                const Tx = (i - j) * HW, Ty = (i + j) * HH, Rx = Tx + HW, Ry = Ty + HH, Bx = Tx, By = Ty + 32, Lx = Tx - HW, Ly = Ty + HH;
+                const face = (ax, ay, cx, cy, col, win) => { quad(ax, ay, cx, cy, cx, cy - h, ax, ay - h, col); if (win) { const p = t => [ax + (cx - ax) * t, ay + (cy - ay) * t], a = p(.3), c = p(.7); quad(a[0], a[1] - h * .4, c[0], c[1] - h * .4, c[0], c[1] - h * .72, a[0], a[1] - h * .72, P.n) } };
+                const w = (i * 3 + j) % 2 === 0;
+                if (!inB(i, j + 1)) face(Lx, Ly, Bx, By, P.l, w);
+                if (!inB(i + 1, j)) face(Bx, By, Rx, Ry, P.w, !w);
+                quad(Tx, Ty - h, Rx, Ry - h, Bx, By - h, Lx, Ly - h, P.r);
+                ctx.strokeStyle = P.e; ctx.lineWidth = 1.3;
+                if (!inB(i, j - 1)) line(Tx, Ty - h, Rx, Ry - h); if (!inB(i - 1, j)) line(Tx, Ty - h, Lx, Ly - h); if (!inB(i, j + 1)) line(Lx, Ly - h, Bx, By - h); if (!inB(i + 1, j)) line(Bx, By - h, Rx, Ry - h)
+            }
+            function drawFlag(f, time) { const x = f.sx, y = f.sy; ctx.fillStyle = '#5b5a55'; ell(ctx, x, y, 6, 3); ctx.fill(); ctx.strokeStyle = '#dcd8cc'; ctx.lineWidth = 1.6; line(x, y, x, y - 46); ctx.fillStyle = f.team ? '#d23c33' : '#3d7bd9'; ctx.beginPath(); ctx.moveTo(x, y - 46); for (let k = 1; k <= 6; k++) { const t = k / 6; ctx.lineTo(x + t * 22, y - 46 + Math.sin(time * 5 - t * 4) * 2.2 * t) } for (let k = 6; k >= 0; k--) { const t = k / 6; ctx.lineTo(x + t * 22, y - 34 + Math.sin(time * 5 - t * 4) * 2.2 * t) } ctx.closePath(); ctx.fill() }
+            function drawZone(f, time) { const x = ix(f.x, f.y), y = iy(f.x, f.y), rx = CAPR * 45.25, ry = CAPR * 22.6; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -time * 8; ctx.strokeStyle = f.team ? 'rgba(255,110,90,.65)' : 'rgba(110,170,255,.65)'; ctx.lineWidth = 1.5; ell(ctx, x, y, rx, ry); ctx.stroke(); ctx.setLineDash([]); if (f.cap > 0) { ctx.strokeStyle = f.team ? '#8af0a4' : '#ff6b5b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, -PI / 2, -PI / 2 + TAU * f.cap); ctx.stroke() } }
+            function drawNade(g, time) { const x = ix(g.x, g.y), y = iy(g.x, g.y) - g.z - 1.5; ctx.fillStyle = '#3b4a2a'; circ(x, y, 2.2); if (g.landed && (time * 10 | 0) % 2) { ctx.fillStyle = '#ff4d3a'; circ(x + .8, y - .8, .9) } }
+            const toW = (px, py) => { const sx = (px - W / 2) / cam.z + cam.x, sy = (py - H / 2) / cam.z + cam.y; return { x: (sx / HW + sy / HH) / 2, y: (sy / HH - sx / HW) / 2 } };
+            function render(time) {
+                const z = cam.z; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#17212a'; ctx.fillRect(0, 0, W, H);
+                const sk = shake > .02 ? shake * 7 : 0; OX = W / 2 - cam.x * z + (Math.random() * 2 - 1) * sk; OY = H / 2 - cam.y * z + (Math.random() * 2 - 1) * sk;
+                ctx.setTransform(DPR * z, 0, 0, DPR * z, DPR * OX, DPR * OY); ctx.imageSmoothingEnabled = true; ctx.drawImage(gc, -GOX, 0);
+                const x0 = cam.x - W / 2 / z - 90, x1 = cam.x + W / 2 / z + 90, y0 = cam.y - H / 2 / z - 110, y1 = cam.y + H / 2 / z + 70, inV = (a, b) => a > x0 && a < x1 && b > y0 && b < y1;
+                ctx.strokeStyle = 'rgba(210,235,255,.16)'; ctx.lineWidth = 1.2; ctx.beginPath(); for (const k of water) { const i = k % N, j = (k / N) | 0, cx = (i - j) * HW, cy = (i + j + 1) * HH; if (!inV(cx, cy)) continue; const o = Math.sin(time * 1.4 + i * .9 + j * .6) * 5; ctx.moveTo(cx - 8 + o, cy - 3); ctx.lineTo(cx + 2 + o, cy - 3); ctx.moveTo(cx - 2 - o, cy + 4); ctx.lineTo(cx + 7 - o, cy + 4) } ctx.stroke();
+                for (const f of flags) drawZone(f, time);
+                ctx.globalCompositeOperation = 'lighter';
+                for (const L of lights) { ctx.globalAlpha = 1 - L.t / L.dur; ctx.drawImage(GLOW, ix(L.x, L.y) - L.r, iy(L.x, L.y) - L.r * .5, L.r * 2, L.r) }
+                for (const s of soldiers) if (s.flash > 0 && (!s.team || visAt(s.x, s.y))) { ctx.globalAlpha = s.flash / .06 * .45; ctx.drawImage(GLOW, ix(s.x, s.y) - 22, iy(s.x, s.y) - 11, 44, 22) }
+                ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+                for (const c of corpses) if (inV(ix(c.x, c.y), iy(c.x, c.y)) && (!c.team || vis[Math.floor(c.y) * N + Math.floor(c.x)])) drawSoldier(c);
+                for (const g of nades) { ctx.fillStyle = 'rgba(0,0,0,.3)'; ell(ctx, ix(g.x, g.y), iy(g.x, g.y), 3, 1.5); ctx.fill() }
+                ctx.lineWidth = 1.3;
+                for (const s of soldiers) { const sl = sel.has(s.sq), hv = s.sq === hoverSq; if (!sl && !hv) continue; if (s.team && !visAt(s.x, s.y)) continue; ctx.strokeStyle = s.team ? '#ff6b5b' : sl ? '#8af0a4' : 'rgba(255,255,255,.55)'; ell(ctx, ix(s.x, s.y), iy(s.x, s.y), 7.5, 3.8); ctx.stroke() }
+                ctx.setLineDash([4, 4]); ctx.lineWidth = 1.2;
+                for (const q of sel) { if (q.order && q.order.type === 'attack' && q.order.target.alive) { const c = cent(q.order.target); ctx.strokeStyle = 'rgba(255,110,90,.7)'; line(ix(q.ax, q.ay), iy(q.ax, q.ay), ix(c.x, c.y), iy(c.x, c.y)) } else if (q.path.length) { ctx.strokeStyle = 'rgba(140,255,170,.6)'; ctx.beginPath(); ctx.moveTo(ix(q.ax, q.ay), iy(q.ax, q.ay)); for (const p of q.path) ctx.lineTo(ix(p.x, p.y), iy(p.x, p.y)); ctx.stroke() } }
+                ctx.setLineDash([]);
+                for (const m of marks) { const k = m.t / m.dur, r = (1 - k) * 30 + 6; ctx.globalAlpha = 1 - k; ctx.strokeStyle = m.c; ctx.lineWidth = 2; ell(ctx, ix(m.x, m.y), iy(m.x, m.y), r, r / 2); ctx.stroke() }
+                ctx.globalAlpha = 1;
+                if (nadeMode && ptr.in) { const w = toW(ptr.x, ptr.y); ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(255,120,90,.9)'; ctx.lineWidth = 1.5; ell(ctx, ix(w.x, w.y), iy(w.x, w.y), 2.4 * 45.25, 2.4 * 22.6); ctx.stroke(); const q = nadeSquad(w); if (q) { ctx.strokeStyle = 'rgba(255,255,255,.3)'; ell(ctx, ix(q.ax, q.ay), iy(q.ax, q.ay), GR * 45.25, GR * 22.6); ctx.stroke() } ctx.setLineDash([]) }
+                if (drag && drag.type === 'face' && hy(drag.x - drag.x0, drag.y - drag.y0) > 18) { const a = toW(drag.x0, drag.y0), b = toW(drag.x, drag.y), ax = ix(a.x, a.y), ay = iy(a.x, a.y), bx = ix(b.x, b.y), by = iy(b.x, b.y), an = Math.atan2(by - ay, bx - ax); ctx.strokeStyle = '#8af0a4'; ctx.lineWidth = 2; line(ax, ay, bx, by); line(bx, by, bx - Math.cos(an - .5) * 10, by - Math.sin(an - .5) * 10); line(bx, by, bx - Math.cos(an + .5) * 10, by - Math.sin(an + .5) * 10) }
+                const dl = []; for (const o of statics) if (inV(o.sx, o.sy)) dl.push(o);
+                for (const s of soldiers) { if (s.team && !visAt(s.x, s.y)) continue; if (!inV(ix(s.x, s.y), iy(s.x, s.y))) continue; s.d = s.x + s.y; dl.push(s) }
+                for (const g of nades) { g.d = g.x + g.y; dl.push(g) }
+                dl.sort((a, b) => a.d - b.d);
+                for (const o of dl) { if (o.sq) drawSoldier(o); else if (o.nade) drawNade(o, time); else if (o.t === 'tree') ctx.drawImage(TREES[o.v], o.sx - 36, o.sy - 79, 72, 88); else if (o.t === 'rock') ctx.drawImage(ROCKS[o.v], o.sx - 24, o.sy - 22, 48, 32); else if (o.t === 'bags') ctx.drawImage(bagSpr(o.m), o.sx - 40, o.sy - 30, 80, 52); else if (o.t === 'bld') drawBld(o); else if (o.t === 'flag') drawFlag(o, time) }
+                ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+                for (const b of bullets) { const f = Math.min(1, b.t / b.dur), f0 = Math.max(0, f - 1.2 / b.len), Q = t => { const x = b.x0 + (b.x1 - b.x0) * t, y = b.y0 + (b.y1 - b.y0) * t; return [ix(x, y), iy(x, y) - (b.z0 + (b.z1 - b.z0) * t)] }, a = Q(f), c = Q(f0); ctx.strokeStyle = b.team ? 'rgba(255,90,50,.45)' : 'rgba(255,190,70,.45)'; ctx.lineWidth = 2.6; line(a[0], a[1], c[0], c[1]); ctx.strokeStyle = b.team ? 'rgba(255,215,190,.95)' : 'rgba(255,250,215,.95)'; ctx.lineWidth = 1; line(a[0], a[1], c[0], c[1]) }
+                ctx.globalCompositeOperation = 'source-over';
+                for (const p of parts) {
+                    if (p.t === 2 || p.t === 5) continue; const x = ix(p.x, p.y), y = iy(p.x, p.y) - p.z, k = p.life / p.max;
+                    if (p.t === 0) { ctx.globalAlpha = p.a * k; ctx.fillStyle = p.c; circ(x, y, p.s + (1 - k) * p.gr) }
+                    else if (p.t === 3) { ctx.globalAlpha = Math.min(1, k * 2); ctx.fillStyle = p.c; ctx.fillRect(x - p.s / 2, y - p.s / 2, p.s, p.s) }
+                    else { ctx.globalAlpha = Math.min(1, k * 3); const sh = p.t === 4; ctx.strokeStyle = sh ? '#d9a441' : p.c; ctx.lineWidth = sh ? 1 : 1.8; const c = Math.cos(p.rot) * (sh ? 1.3 : 1.6), s = Math.sin(p.rot) * (sh ? .7 : 1.2); line(x - c, y - s, x + c, y + s) }
+                }
+                ctx.globalCompositeOperation = 'lighter';
+                for (const p of parts) {
+                    if (p.t !== 2 && p.t !== 5) continue; const x = ix(p.x, p.y), y = iy(p.x, p.y) - p.z, k = p.life / p.max; ctx.globalAlpha = k;
+                    if (p.t === 2) { ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 1; line(x, y, x - (p.vx - p.vy) * HW * .025, y - ((p.vx + p.vy) * HH - p.vz) * .025) }
+                    else { ctx.fillStyle = k > .6 ? '#ffe6a0' : k > .3 ? '#ff9a3c' : '#b8461c'; circ(x, y, p.s * (.5 + (1 - k) * .9)) }
+                }
+                for (const r of rings) { const k = r.t / r.dur, q = k * 2.6; ctx.globalAlpha = .6 * (1 - k); ctx.strokeStyle = '#fff0dc'; ctx.lineWidth = 2.5 * (1 - k) + .5; ell(ctx, ix(r.x, r.y), iy(r.x, r.y), q * 45.25, q * 22.6); ctx.stroke() }
+                for (const L of lights) { ctx.globalAlpha = (1 - L.t / L.dur) * .8; ctx.drawImage(GLOW, ix(L.x, L.y) - 45, iy(L.x, L.y) - 60, 90, 90) }
+                ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+                ctx.save(); ctx.transform(HW, HH, -HW, HH, 0, 0); ctx.drawImage(fogC, 0, 0); ctx.restore();
+                overlay()
+            }
+            function overlay() {
+                const z = cam.z; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); const TS = (x, y, h) => [ix(x, y) * z + OX, (iy(x, y) - h) * z + OY];
+                for (const s of soldiers) {
+                    if (s.team && !visAt(s.x, s.y)) continue; if (!(sel.has(s.sq) || s.sq === hoverSq || s.hp < 99.5)) continue; const [x, y] = TS(s.x, s.y, 27); if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue; const hp = Math.max(0, s.hp) / 100;
+                    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 8, y - 1, 16, 4); ctx.fillStyle = s.team ? '#ff5b4f' : hp > .5 ? '#6ee07a' : hp > .25 ? '#f2c14e' : '#ff6b5b'; ctx.fillRect(x - 7, y, 14 * hp, 2);
+                    if (!s.team && s.reload > 0) { ctx.strokeStyle = '#e9eef2'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(x + 12, y + 1, 3, -PI / 2, -PI / 2 + TAU * (1 - s.reload / s.w.rt)); ctx.stroke() }
+                    if (s.cov) { ctx.fillStyle = s.team ? '#ffb0a8' : '#bff5c9'; ctx.beginPath(); ctx.moveTo(x - 14, y - 2); ctx.lineTo(x - 10, y - 2); ctx.lineTo(x - 10, y + 1.5); ctx.lineTo(x - 12, y + 3.5); ctx.lineTo(x - 14, y + 1.5); ctx.closePath(); ctx.fill() }
+                }
+                ctx.font = '500 11px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                squads.filter(q => !q.team).forEach((q, n) => { const c = cent(q), [x, y] = TS(c.x, c.y, 40), t = (n + 1) + ' ' + q.name, w = ctx.measureText(t).width + 10, sl = sel.has(q); ctx.fillStyle = sl ? '#8af0a4' : 'rgba(12,18,26,.62)'; rr(x - w / 2, y - 8, w, 16, 4); ctx.fillStyle = sl ? '#0d3b1c' : '#e3ebe0'; ctx.fillText(t, x, y + .5) });
+                if (drag && drag.type === 'box' && hy(drag.x - drag.x0, drag.y - drag.y0) > 6) { const a = Math.min(drag.x, drag.x0), b = Math.min(drag.y, drag.y0), w = Math.abs(drag.x - drag.x0), h = Math.abs(drag.y - drag.y0); ctx.fillStyle = 'rgba(138,240,164,.1)'; ctx.fillRect(a, b, w, h); ctx.strokeStyle = '#8af0a4'; ctx.lineWidth = 1; ctx.strokeRect(a + .5, b + .5, w, h) }
+                ctx.textAlign = 'left'; ctx.font = '500 12px ' + FONT; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.65)';
+                msgs.forEach((m, n) => { ctx.globalAlpha = Math.min(1, m.t); ctx.fillStyle = m.c; ctx.strokeText(m.text, 12, 18 + n * 18); ctx.fillText(m.text, 12, 18 + n * 18) }); ctx.globalAlpha = 1;
+                if (waveI < WAVES.length && state === 'play') { const t = 'Enemy wave in ' + Math.max(0, Math.ceil(waveT)) + 's'; ctx.textAlign = 'right'; ctx.fillStyle = '#ffcf9a'; ctx.strokeText(t, W - 12, 18); ctx.fillText(t, W - 12, 18) }
+                if (nadeMode) { const t = 'Grenade: left-click a target, right-click to cancel'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffb09a'; ctx.strokeText(t, W / 2 - 60, H - 16); ctx.fillText(t, W / 2 - 60, H - 16) }
+                if (err) { ctx.textAlign = 'left'; ctx.fillStyle = '#ff8a7a'; ctx.fillText('Error: ' + err, 12, H - 14) }
+            }
+            function drawMM() {
+                if (!mmB) return; const w = mm.width, h = mm.height, s = w / gc.width, d = DPR; mc.setTransform(1, 0, 0, 1, 0, 0); mc.clearRect(0, 0, w, h); mc.save(); mc.beginPath(); mc.moveTo(w / 2, 0); mc.lineTo(w, h / 2); mc.lineTo(w / 2, h); mc.lineTo(0, h / 2); mc.closePath(); mc.fillStyle = 'rgba(10,14,20,.6)'; mc.fill(); mc.clip(); mc.drawImage(mmB, 0, 0, w, h); mc.setTransform(HW * s, HH * s, -HW * s, HH * s, GOX * s, 0); mc.drawImage(fogC, 0, 0); mc.restore();
+                for (const o of soldiers) { if (o.team && !visAt(o.x, o.y)) continue; mc.fillStyle = o.team ? '#ff5b4f' : sel.has(o.sq) ? '#9dffb5' : '#5aa8ff'; mc.fillRect((ix(o.x, o.y) + GOX) * s - 1.5 * d, iy(o.x, o.y) * s - 1.5 * d, 3 * d, 3 * d) }
+                for (const f of flags) { mc.fillStyle = f.team ? '#ff5b4f' : '#5aa8ff'; mc.fillRect((ix(f.x, f.y) + GOX) * s - 2.5 * d, iy(f.x, f.y) * s - 2.5 * d, 5 * d, 5 * d) }
+                mc.strokeStyle = 'rgba(255,255,255,.85)'; mc.lineWidth = d; mc.strokeRect((cam.x - W / 2 / cam.z + GOX) * s, (cam.y - H / 2 / cam.z) * s, W / cam.z * s, H / cam.z * s)
+            }
+            function clampCam() { cam.x = cl(cam.x, -GOX, GOX); cam.y = cl(cam.y, 0, N * 32) }
+            function pickAt(x, y) { let best = null, bd = 13 * Math.max(.8, cam.z); for (const s of soldiers) { if (s.team && !visAt(s.x, s.y)) continue; const d = hy(ix(s.x, s.y) * cam.z + OX - x, (iy(s.x, s.y) - 11) * cam.z + OY - y); if (d < bd) { bd = d; best = s } } return best }
+            function selectOnly(q) { sel.clear(); if (q) sel.add(q) }
+            function nadeSquad(w) { let b = null, bd = 1e9; for (const q of sel) if (q.gcd <= 0) { const d = hy(q.ax - w.x, q.ay - w.y); if (d < bd) { bd = d; b = q } } return b }
+            function doNade(x, y) { const w = toW(x, y), q = nadeSquad(w); nadeMode = false; if (!q) { msg('Grenade not ready', '#ffb09a'); return } order(q, { type: 'nade', x: w.x, y: w.y }); marks.push({ x: w.x, y: w.y, t: 0, dur: .6, c: '#ff7a5c' }); sfxAck() }
+            function command(x, y, fx, fy) {
+                if (state !== 'play' || !sel.size) return; if (nadeMode) { nadeMode = false; return } const t = pickAt(x, y), qs = [...sel];
+                if (t && t.team) { for (const q of qs) order(q, { type: 'attack', target: t.sq }); marks.push({ x: t.x, y: t.y, t: 0, dur: .6, c: '#ff5a4f' }); sfxAck(); return }
+                const w = toW(x, y); let face = null; if (fx != null) { const b = toW(fx, fy); face = Math.atan2(b.y - w.y, b.x - w.x) }
+                let cx = 0, cy = 0; for (const q of qs) { cx += q.ax; cy += q.ay } cx /= qs.length; cy /= qs.length; const dir = face != null ? face : Math.atan2(w.y - cy, w.x - cx), px = -Math.sin(dir), py = Math.cos(dir);
+                qs.sort((a, b) => ((a.ax - cx) * px + (a.ay - cy) * py) - ((b.ax - cx) * px + (b.ay - cy) * py));
+                qs.forEach((q, n) => { const o = (n - (qs.length - 1) / 2) * 3.6; moveTo(q, cl(w.x + px * o, .5, N - .5), cl(w.y + py * o, .5, N - .5), face) });
+                marks.push({ x: w.x, y: w.y, t: 0, dur: .6, c: '#8af0a4' }); sfxAck()
+            }
+            function boxSel(x0, y0, x1, y1, add) { if (!add) sel.clear(); const a = Math.min(x0, x1), b = Math.min(y0, y1), c = Math.max(x0, x1), d = Math.max(y0, y1); for (const s of soldiers) { if (s.team) continue; const sx = ix(s.x, s.y) * cam.z + OX, sy = (iy(s.x, s.y) - 10) * cam.z + OY; if (sx >= a && sx <= c && sy >= b && sy <= d) sel.add(s.sq) } }
+            function clickSel(x, y, add) { const s = pickAt(x, y); if (s && !s.team) { if (add) { if (sel.has(s.sq)) sel.delete(s.sq); else sel.add(s.sq) } else selectOnly(s.sq) } else if (!add) sel.clear() }
+            function centerOn(qs) { if (!qs.length) return; let x = 0, y = 0; for (const q of qs) { const c = cent(q); x += c.x; y += c.y } x /= qs.length; y /= qs.length; cam.x = ix(x, y); cam.y = iy(x, y); clampCam() }
+            const lp = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] };
+            cv.addEventListener('pointerdown', e => {
+                try { cv.focus({ preventScroll: true }) } catch (_) { } initAudio(); const [x, y] = lp(e); ptr.x = x; ptr.y = y; ptr.in = true; try { cv.setPointerCapture(e.pointerId) } catch (_) { }
+                if (state !== 'play') return;
+                if (e.pointerType !== 'mouse') { drag = { type: 'touch', x0: x, y0: y, x, y, cx: cam.x, cy: cam.y, moved: false }; return }
+                if (e.button === 1) { e.preventDefault(); drag = { type: 'pan', x0: x, y0: y, x, y, cx: cam.x, cy: cam.y }; return }
+                if (e.button === 2) { drag = { type: 'face', x0: x, y0: y, x, y }; return }
+                if (e.button === 0) { if (nadeMode) { doNade(x, y); return } drag = { type: 'box', x0: x, y0: y, x, y, add: e.shiftKey } }
+            });
+            cv.addEventListener('pointermove', e => { const [x, y] = lp(e); ptr.x = x; ptr.y = y; ptr.in = true; if (!drag) return; drag.x = x; drag.y = y; if (drag.type === 'pan' || drag.type === 'touch') { const dx = x - drag.x0, dy = y - drag.y0; if (drag.type === 'touch' && hy(dx, dy) > 10) drag.moved = true; if (drag.type === 'pan' || drag.moved) { cam.x = drag.cx - dx / cam.z; cam.y = drag.cy - dy / cam.z; clampCam() } } });
+            cv.addEventListener('pointerup', e => {
+                if (!drag) return; const d = drag; drag = null; const [x, y] = lp(e);
+                if (d.type === 'box') { if (hy(x - d.x0, y - d.y0) > 6) boxSel(d.x0, d.y0, x, y, d.add); else clickSel(x, y, d.add) }
+                else if (d.type === 'face') { const far = hy(x - d.x0, y - d.y0) > 18; command(d.x0, d.y0, far ? x : null, far ? y : null) }
+                else if (d.type === 'touch' && !d.moved) { if (nadeMode) { doNade(x, y); return } const s = pickAt(x, y); if (s && !s.team) selectOnly(s.sq); else if (sel.size) command(x, y, null, null) }
+            });
+            cv.addEventListener('pointercancel', () => { drag = null });
+            cv.addEventListener('pointerleave', () => { ptr.in = false });
+            cv.addEventListener('contextmenu', e => e.preventDefault());
+            cv.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = lp(e), sx = (x - W / 2) / cam.z + cam.x, sy = (y - H / 2) / cam.z + cam.y; cam.z = cl(cam.z * (e.deltaY < 0 ? 1.12 : 1 / 1.12), .55, 1.7); cam.x = sx - (x - W / 2) / cam.z; cam.y = sy - (y - H / 2) / cam.z; clampCam() }, { passive: false });
+            let mmDrag = false; const mmGo = e => { const r = mm.getBoundingClientRect(); cam.x = (e.clientX - r.left) / r.width * gc.width - GOX; cam.y = (e.clientY - r.top) / r.height * gc.height; clampCam() };
+            mm.addEventListener('pointerdown', e => { mmDrag = true; try { mm.setPointerCapture(e.pointerId) } catch (_) { } mmGo(e); e.stopPropagation() });
+            mm.addEventListener('pointermove', e => { if (mmDrag) mmGo(e) });
+            mm.addEventListener('pointerup', () => { mmDrag = false });
+            mm.addEventListener('contextmenu', e => e.preventDefault());
+            window.addEventListener('keydown', e => {
+                const k = e.code; if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(k)) e.preventDefault(); keys.add(k); if (e.repeat) return;
+                if (k === 'KeyP') { togglePause(); return }
+                if (state !== 'play') return;
+                const ps = squads.filter(q => !q.team);
+                if (/^Digit[1-6]$/.test(k)) { const q = ps[+k[5] - 1]; if (q) { const now = performance.now(); if (e.shiftKey) sel.add(q); else selectOnly(q); if (lastKey.k === k && now - lastKey.t < 350) centerOn([q]); lastKey = { k, t: now } } }
+                else if (k === 'KeyA' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sel.clear(); ps.forEach(q => sel.add(q)) }
+                else if (k === 'KeyG') { if ([...sel].some(q => q.gcd <= 0)) nadeMode = true; else msg(sel.size ? 'Grenade not ready' : 'Select a squad first', '#ffb09a') }
+                else if (k === 'KeyF') { for (const q of sel) { q.form = (q.form + 1) % 3; assign(q) } if (sel.size) msg('Formation: ' + FN[[...sel][0].form]) }
+                else if (k === 'KeyX') { for (const q of sel) { q.order = null; q.path = []; q.ff = q.facing } }
+                else if (k === 'KeyR') deploy();
+                else if (k === 'Space') centerOn(sel.size ? [...sel] : ps);
+                else if (k === 'Escape') { if (nadeMode) nadeMode = false; else sel.clear() }
+            });
+            window.addEventListener('keyup', e => keys.delete(e.code));
+            window.addEventListener('blur', () => keys.clear());
+            function upCam(dt) {
+                let vx = 0, vy = 0; if (keys.has('ArrowLeft') || keys.has('KeyA')) vx--; if (keys.has('ArrowRight') || keys.has('KeyD')) vx++; if (keys.has('ArrowUp') || keys.has('KeyW')) vy--; if (keys.has('ArrowDown') || keys.has('KeyS')) vy++;
+                if (ptr.in && !drag && state === 'play' && (ptr.x < 14 || ptr.x > W - 14 || ptr.y < 14 || ptr.y > H - 14)) { edgeT += dt; if (edgeT > .25) { if (ptr.x < 14) vx--; if (ptr.x > W - 14) vx++; if (ptr.y < 14) vy--; if (ptr.y > H - 14) vy++ } } else edgeT = 0;
+                const sp = 650 / cam.z; cam.x += vx * sp * dt; cam.y += vy * sp * dt; clampCam(); shake *= Math.exp(-dt * 7)
+            }
+            function deploy() { if (state !== 'play') return; if (squads.filter(q => !q.team).length >= 6) { msg('Squad limit reached', '#ffb09a'); return } if (cp < COST) { msg('Need ' + COST + ' command points', '#ffb09a'); return } cp -= COST; const q = makeSquad(0, PHQ.x - 1.5, PHQ.y - 1.5, null, -3 * PI / 4); moveTo(q, PHQ.x - 5 + R0(-1, 1), PHQ.y - 5 + R0(-1, 1), null); msg('Squad ' + q.name + ' deployed', '#9dd7ff') }
+            let AC = null, master = null, nbuf = null, sndOn = true;
+            function initAudio() { try { if (!AC) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return; AC = new C(); master = AC.createGain(); master.gain.value = sndOn ? .55 : 0; master.connect(AC.destination); nbuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++)d[i] = Math.random() * 2 - 1 } if (AC.state === 'suspended') AC.resume() } catch (e) { AC = null } }
+            function sOut(x, y, v) { const dx = (ix(x, y) * cam.z + OX - W / 2) / W, dy = (iy(x, y) * cam.z + OY - H / 2) / H, g = AC.createGain(); g.gain.value = v * cl(1.15 - hy(dx, dy) * .9, .06, 1); if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = cl(dx * 1.4, -.9, .9); g.connect(p); p.connect(master) } else g.connect(master); return g }
+            function sfxShot(x, y, hv) { if (!AC || !sndOn || shotB <= 0 || AC.state !== 'running') return; shotB--; const t = AC.currentTime, o = sOut(x, y, hv ? .5 : .4), s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = nbuf; f.type = 'lowpass'; f.frequency.setValueAtTime(hv ? 2600 : 3800, t); f.frequency.exponentialRampToValueAtTime(300, t + .13); g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(.001, t + (hv ? .16 : .12)); s.connect(f); f.connect(g); g.connect(o); s.start(t, Math.random() * .7, .2); const os = AC.createOscillator(), og = AC.createGain(); os.frequency.setValueAtTime(hv ? 130 : 170, t); os.frequency.exponentialRampToValueAtTime(45, t + .08); og.gain.setValueAtTime(.7, t); og.gain.exponentialRampToValueAtTime(.001, t + .09); os.connect(og); og.connect(o); os.start(t); os.stop(t + .1) }
+            function sfxBoom(x, y) { if (!AC || !sndOn || AC.state !== 'running') return; const t = AC.currentTime, o = sOut(x, y, .95), s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = nbuf; s.loop = true; f.type = 'lowpass'; f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(60, t + 1.1); g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(.001, t + 1.2); s.connect(f); f.connect(g); g.connect(o); s.start(t); s.stop(t + 1.25); const os = AC.createOscillator(), og = AC.createGain(); os.frequency.setValueAtTime(90, t); os.frequency.exponentialRampToValueAtTime(28, t + .5); og.gain.setValueAtTime(.9, t); og.gain.exponentialRampToValueAtTime(.001, t + .55); os.connect(og); og.connect(o); os.start(t); os.stop(t + .6) }
+            function sfxAck() { if (!AC || !sndOn || AC.state !== 'running') return; const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(520, t); o.frequency.setValueAtTime(780, t + .05); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.08, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + .12); o.connect(g); g.connect(master); o.start(t); o.stop(t + .13) }
+            const ov = $('ov'), ovt = $('ovt'), ovp = $('ovp'), ovb = $('ovb'), pz = $('pz'), snd = $('snd'), cardsEl = $('cards');
+            function showOv(t, p, b) { ovt.textContent = t; ovp.textContent = p; ovb.lastChild.textContent = ' ' + b; ov.style.display = 'flex' }
+            function setPz() { pz.firstElementChild.className = 'ti ' + (state === 'paused' ? 'ti-player-play' : 'ti-player-pause') }
+            function togglePause() { if (state === 'play') { state = 'paused'; showOv('Paused', 'Your squads hold position until you resume.', 'Resume') } else if (state === 'paused') { state = 'play'; ov.style.display = 'none'; try { cv.focus({ preventScroll: true }) } catch (_) { } } setPz() }
+            ovb.addEventListener('click', () => { initAudio(); if (state === 'won' || state === 'lost') reset(); state = 'play'; ov.style.display = 'none'; setPz(); try { cv.focus({ preventScroll: true }) } catch (_) { } });
+            pz.addEventListener('click', togglePause);
+            snd.addEventListener('click', () => { sndOn = !sndOn; if (master) master.gain.value = sndOn ? .55 : 0; snd.firstElementChild.className = 'ti ' + (sndOn ? 'ti-volume' : 'ti-volume-off') });
+            $('dep').addEventListener('click', () => { initAudio(); deploy() });
+            let lastCards = '', lastTap = { id: -1, t: 0 };
+            cardsEl.addEventListener('pointerdown', e => {
+                const el = e.target.closest('.card'); if (!el) return; const q = squads.find(s => s.id === +el.dataset.q); if (!q) return; const now = performance.now(), dbl = lastTap.id === q.id && now - lastTap.t < 350;
+                if (dbl) { sel.add(q); centerOn([q]) } else if (e.shiftKey || e.pointerType !== 'mouse') { if (sel.has(q)) sel.delete(q); else sel.add(q) } else selectOnly(q); lastTap = { id: q.id, t: now }; hud()
+            });
+            function hud() {
+                $('cp').textContent = Math.floor(cp); $('kl').textContent = kills; $('clk').textContent = clock();
+                const fp = flags[0], fe = flags[1], ob = $('obj'); let o = 'Capture the enemy HQ'; if (fp && fp.cap > .01) o = 'Your HQ is being captured · ' + Math.round(fp.cap * 100) + '%'; else if (fe && fe.cap > .01) o = 'Capturing enemy HQ · ' + Math.round(fe.cap * 100) + '%'; if (ob.textContent !== o) ob.textContent = o; ob.style.color = fp && fp.cap > .01 ? 'var(--text-danger)' : '';
+                let h = ''; squads.filter(q => !q.team).forEach((q, n) => {
+                    let p = ''; for (let k = 0; k < 5; k++) { const s = q.soldiers[k], v = s ? Math.max(0, Math.round(s.hp)) : 0; p += '<span><i style="width:' + v + '%' + (v < 35 ? ';background:var(--text-danger)' : v < 60 ? ';background:var(--text-warning)' : '') + '"></i></span>' }
+                    const st = q.order ? (q.order.type === 'attack' ? 'attacking' : q.order.type === 'nade' ? 'closing in' : 'moving') : q.eng ? 'engaged' : 'holding';
+                    h += '<div class="card' + (sel.has(q) ? ' sel' : '') + '" data-q="' + q.id + '"><div class="ch"><span>' + q.name + '</span><span>' + (n + 1) + '</span></div><div class="pips">' + p + '</div><div class="cs">' + FN[q.form] + ' · ' + st + '</div><div class="cs">Grenade ' + (q.gcd > 0 ? Math.ceil(q.gcd) + 's' : 'ready') + '</div></div>'
+                });
+                if (!h) h = '<div class="cs" style="padding:6px 0">No squads in the field. Deploy a new squad.</div>'; if (h !== lastCards) { cardsEl.innerHTML = h; lastCards = h }
+            }
+            function resize() { const w = Math.round(view.clientWidth) || 680; if (w === lastW) return; lastW = w; W = w; H = Math.round(cl(w * .68, 300, 480)); cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); cv.style.height = H + 'px'; mm.width = Math.round(150 * DPR); mm.height = Math.round(75 * DPR) }
+            function reset() {
+                squads = []; soldiers = []; corpses = []; bullets = []; nades = []; parts = []; rings = []; lights = []; marks = []; msgs = []; sel.clear(); nadeMode = false; cp = 60; kills = 0; gt = 0; waveT = 70; waveI = 0; eNade = 10; sqId = 0; shake = 0;
+                genMap(); paintGround(); mkMM(); vis.fill(0); flags = [{ team: 0, x: PHQ.x, y: PHQ.y, cap: 0 }, { team: 1, x: EHQ.x, y: EHQ.y, cap: 0 }];
+                for (const p of STARTS) makeSquad(0, p.x, p.y, null, -3 * PI / 4);
+                for (const g of GARR) makeSquad(1, g.x, g.y, 'guard', PI / 4);
+                cam.x = 0; cam.y = iy(31, 31) - 30; cam.z = 1; updVis(); lastCards = ''; hud()
+            }
+            let last = performance.now();
+            function frame(now) {
+                const dt = Math.min(.05, (now - last) / 1000); last = now; try {
+                    upCam(dt); if (state === 'play') update(dt); if (state === 'play' && ptr.in) { hover = pickAt(ptr.x, ptr.y); hoverSq = hover ? hover.sq : null } else { hover = null; hoverSq = null }
+                    const cur = nadeMode ? 'crosshair' : hover ? (hover.team ? (sel.size ? 'crosshair' : 'default') : 'pointer') : 'default'; if (cv.style.cursor !== cur) cv.style.cursor = cur;
+                    render(now / 1000); if ((hudT -= dt) <= 0) { hudT = .15; hud() } if ((mmT -= dt) <= 0) { mmT = .07; drawMM() }
+                } catch (e) { err = String(e && e.message || e) } requestAnimationFrame(frame)
+            }
+            new ResizeObserver(() => resize()).observe(view);
+            resize(); reset(); requestAnimationFrame(frame);
+        })();
+    </script>
+</body>
+
+</html>
