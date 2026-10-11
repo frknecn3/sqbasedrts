@@ -58,24 +58,45 @@ function makeCtx(canvas) {
 
 /* -------------------------------------------------------------------- DOM -- */
 
+function textNode(t) { const n = { nodeType: 3, nodeValue: String(t), parentNode: null, children: [], className: '' }; Object.defineProperty(n, 'textContent', { get: () => n.nodeValue, set: v => { n.nodeValue = String(v) } }); return n }
+
 class El {
-  constructor(id) {
+  constructor(id, tag = 'DIV') {
     this.id = id;
+    this.tagName = tag.toUpperCase();
     this.style = {};
     this.dataset = {};
-    this.children = [];
-    this.textContent = '';
+    this.children = [];                 // element + text children, in order (dom childNodes)
+    this.parentNode = null;
+    this._text = '';
     this._html = '';
     this.width = 300; this.height = 150;
     this.clientWidth = 680;
     this._lis = {};
-    this.firstElementChild = { className: '' };
-    this.lastChild = { textContent: '' };
-    this.tagName = 'DIV';
+    this.className = '';
+    this.disabled = false;
+    this.title = '';
     if (id === 'cv' || id === 'mm') this.ctx = makeCtx(this);
   }
+  // textContent on an element concatenates its children (setting it replaces them)
+  get textContent() { return this.children.length ? this.children.map(c => c.textContent).join('') : this._text }
+  set textContent(v) { this.children = []; this._text = String(v) }
   get innerHTML() { return this._html }
   set innerHTML(v) { this._html = v }
+  get lastChild() { return this.children.length ? this.children[this.children.length - 1] : null }
+  get firstChild() { return this.children[0] || null }
+  get firstElementChild() { return this.children.find(c => c.nodeType !== 3) || null }
+  get childNodes() { return this.children }
+  appendChild(c) { if (c && c.parentNode) c.parentNode.removeChild(c); this.children.push(c); if (c) c.parentNode = this; return c }
+  removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) { this.children.splice(i, 1); c.parentNode = null } return c }
+  insertBefore(c, ref) { if (!ref) return this.appendChild(c); const i = this.children.indexOf(ref); return i < 0 ? this.appendChild(c) : (this.children.splice(i, 0, c), c.parentNode = this, c) }
+  remove() { if (this.parentNode) this.parentNode.removeChild(this) }
+  querySelectorAll(sel) {
+    const cls = sel.replace(/^\./, '');
+    const out = [];
+    const walk = el => { for (const c of el.children) if (c.nodeType !== 3) { if (c.className && c.className.split(/\s+/).includes(cls)) out.push(c); walk(c) } };
+    walk(this); return out;
+  }
   getContext() { if (!this.ctx) this.ctx = makeCtx(this); return this.ctx }
   addEventListener(t, fn) { (this._lis[t] = this._lis[t] || []).push(fn) }
   removeEventListener() {}
@@ -91,12 +112,19 @@ function buildDom() {
   const els = {};
   for (const id of ids) els[id] = new El(id);
   els.view.clientWidth = 680;
+  // mirror the static markup the script expects to find (buttons carry an icon node)
+  els.ovb.appendChild(new El('_i', 'i'));
+  els.ovb.appendChild(textNode(' Deploy'));
+  els.pz.appendChild(new El('_i', 'i'));
+  els.snd.appendChild(new El('_i', 'i'));
+  els.bar.appendChild(els.pz);
 
   const doc = {
     body: { fontFamily: 'system-ui, sans-serif', appendChild() {} },
     documentElement: { style: {} },
     getElementById: id => els[id] || (els[id] = new El(id)),
     createElement: tag => new El('_' + tag),
+    createTextNode: t => textNode(t),
     addEventListener() {}, removeEventListener() {},
     hidden: false,
   };
@@ -125,34 +153,23 @@ function loadGameScript() {
   return { script: m[1], html: src };
 }
 
-// Names injected into the game closure's scope when exposeInternals is set.
-// Returned from the IIFE so tests can inspect and drive internal state.
-const EXPOSED =
-  'get squads(){return squads}, get soldiers(){return soldiers}, get flags(){return flags}, ' +
-  'get state(){return state}, set state(v){state=v}, get cp(){return cp}, set cp(v){cp=v}, ' +
-  'get kills(){return kills}, get gt(){return gt}, get err(){return err}, ' +
-  'get waveI(){return waveI}, set waveI(v){waveI=v}, get waveT(){return waveT}, set waveT(v){waveT=v}, ' +
-  'get cam(){return cam}, get parts(){return parts}, get bullets(){return bullets}, ' +
-  'get corpses(){return corpses}, get nades(){return nades}, get marks(){return marks}, ' +
-  'get msgs(){return msgs}, get sel(){return sel}, get vis(){return vis}, ' +
-  'get hL(){return hL}, get hN(){return hN}, get nadeT(){return eNade}, ' +
-  'get W(){return W}, get H(){return H}, get nadeMode(){return nadeMode}, set nadeMode(v){nadeMode=v}, get msgs(){return msgs}, ' +
-  'N, PHQ, EHQ, STARTS, SPAWNS, GARR, PERMS, genMap, findPath, los, segClear, ' +
-  'bp, block, ground, cover, water, statics: () => statics, makeSquad, addSoldier, ' +
-  'deploy, reset, update, render, command, toW, ix, iy, checkEnd, capture';
-
 /**
- * Boot the real game script against the stub DOM.
- * @param {{exposeInternals?: boolean}} opts
+ * Boot the real game script against the stub DOM and return handles to it.
+ *
+ * The game publishes its extension API on `window.SquadCommand.api`; this harness
+ * just supplies the window. Nothing inside index.html is rewritten, so a run
+ * exercises exactly the code a browser would execute.
+ *
+ * @returns {{win: Object, doc: Object, els: Object, fire: Function, fireWin: Function,
+ *            step: Function, api: Object}}
+ *   `els` holds the stub elements by id (cv, mm, view, ov, ovt, ovp, ovb, bar, pz, ...),
+ *   `fire(el, type, ev)` dispatches a DOM event at an element, `fireWin(type, ev)` at
+ *   the window, `step(n, dt)` advances n animation frames (default dt = 1/60 s) and
+ *   `api` is the game's public API (see the header of index.html).
  */
-function boot({ exposeInternals = false } = {}) {
+function boot() {
   const { doc, win, els } = buildDom();
-  let { script } = loadGameScript();
-  if (exposeInternals) {
-    const i = script.lastIndexOf('})();');
-    script = script.slice(0, i) + 'return {' + EXPOSED + '};\n' + script.slice(i);
-    script = 'globalThis.__G = ' + script;
-  }
+  const { script } = loadGameScript();
   const fn = new Function('window', 'document', 'performance', 'requestAnimationFrame',
     'ResizeObserver', 'getComputedStyle', 'globalThis', script);
   fn(win, doc, win.performance, win.requestAnimationFrame, win.ResizeObserver,
@@ -180,7 +197,9 @@ function boot({ exposeInternals = false } = {}) {
     }
   };
 
-  return { win, doc, els, fire, fireWin, step, internals: () => globalThis.__G };
+  const api = win.SquadCommand && win.SquadCommand.api;
+  if (!api) throw new Error('index.html did not publish window.SquadCommand.api');
+  return { win, doc, els, fire, fireWin, step, api };
 }
 
 module.exports = { boot, loadGameScript, makeCtx, GAME_HTML };

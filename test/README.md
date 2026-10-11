@@ -1,68 +1,84 @@
-# Tests for `index.html` (Squad command)
+# Tests
 
-The game is a single self-contained HTML file with no build step and no
-dependencies. These tests run that file's real game code under Node by
-supplying a minimal browser environment, so no browser, bundler or npm
-install is needed.
+Headless test suite for the single-file game in `../index.html`. Node only — no
+dependencies, no build step, nothing is served.
 
-```sh
-node test/run.js                 # full run, ~15 s
-node test/run.js --quick         # skips the long simulated matches, ~8 s
-node test/run.js path            # only suites whose name contains "path"
+```bash
+node test/run.js            # full run, ~40 s (includes two long simulated matches)
+node test/run.js --quick    # skips the long matches, ~10 s
+node test/run.js pathfind   # only suites whose name contains "pathfind"
 ```
 
-Exit codes: `0` all checks passed, `1` at least one check failed (a summary of
-failures is printed), `2` no suite matched the filter. Requires Node 18+.
+Exit code: `0` all checks passed · `1` failures (listed at the end) · `2` bad suite filter.
 
-## How it works
+## Files
 
-`harness.js` builds a stub DOM (elements, pointer/keyboard listeners, a
-`ResizeObserver`, `requestAnimationFrame`) and a no-op Canvas2D context, then
-evaluates the `<script>` block extracted from `index.html` unchanged inside a
-`new Function`. Nothing in `index.html` is patched or re-implemented, so a run
-exercises the same `frame()` → `update()` → `render()` path the browser does.
-
-* **Real:** map generation, A*, squad/soldier simulation, combat, AI, capture
-  logic, input handlers, HUD/minimap code, the sequence of canvas calls.
-* **Stubbed:** rasterisation (every Canvas2D call is counted, not drawn), audio
-  (`AudioContext` is absent, which the game already handles), and fonts.
-
-Because drawing is stubbed, the performance numbers measure simulation plus
-draw-call *submission* only — useful for catching regressions, not a
-substitute for a real browser profile. Likewise nothing here can assert on
-pixels; visual changes need a human (or a headless browser) to confirm.
-
-Boot with `boot({ exposeInternals: true })` to get a handle on the game's
-closure (squads, soldiers, flags, CP, `findPath`, `bp`, ...) for writing new
-checks. `boot()` also returns `fire(el, type, event)` / `fireWin(type, event)`
-to dispatch DOM events and `step(frames, dt)` to advance animation frames.
-
-## What is covered
-
-| Suite | Checks |
+| file | what it is |
 | --- | --- |
-| boot & map generation | boots clean; starting squads/garrison; walkable starts, spawns, HQ and guard posts; generated buildings/cover/trees/flags; blocked-tile density; map determinism across boots |
-| pathfinding | 1800+ random queries cross-checked against an independent BFS: returned paths never cross blocked tiles, always reach the goal, and never disagree with BFS on reachability; both HQs reachable from every start and spawn; A* heap headroom; buildings block line of sight |
-| controls & interaction | deploy costs/cap/refusal; Ctrl+A, number keys, click and box select; group move orders and spread targets; formation cycling and wrap-around; stop orders; grenade mode and throw; pause freeze/resume; canvas resize; zoom, minimap and touch pan |
-| objectives & win/lose | capture meter fills and wins; winning by wiping out the garrison after the last wave; losing the HQ; defeat panel; elimination with too little CP |
-| combat & support | auto-acquisition and kills without orders; tracers; kill rewards; corpses; grenade projectile, splash damage and recall timer; HQ reinforcement and its cap; guard AI leashing home |
-| stability | a 25-minute unattended match and a 20-minute randomised input fuzz (pointer, wheel, keyboard) with no exceptions, plus particle/bullet/corpse pool bounds and finite positions |
-| performance budgets | simulation + draw-call submission per frame and canvas2D call volume under load |
-| document structure | tag balance, every `$('id')` resolving, balanced CSS braces, a single inline script, no `console.*` left in game code, and the external-asset inventory |
+| `harness.js` | boots `index.html` under a stub DOM/Canvas2D and hands back the game's own `window.SquadCommand.api` |
+| `run.js` | the suite: 146 checks in 9 suites, written **entirely against the public API** |
 
-## Known findings recorded by the suite
+## The harness
 
-Two behaviours are asserted as *current* state rather than as desired state —
-they are documented rather than fixed, since fixing them changes gameplay:
+`index.html` runs in the browser: it looks up DOM ids, draws to a Canvas2D context,
+listens for pointer/keyboard events and drives a `requestAnimationFrame` loop.
+`harness.js` supplies exactly that much of a browser and **executes the real script
+unmodified** — no source rewriting, no exports bolted on — so a run exercises the same
+`frame()` / `update()` / `render()` code the browser runs.
 
-* **Unreachable pockets** — around 2% of walkable tiles sit in pockets that are
-  walled off under the game's no-corner-cutting movement rule. `findPath`
-  correctly returns an empty path for them, and a move order into one is
-  silently dropped. The suite asserts the rate stays under 5%.
-* **A* heap is unbounded** — `hN`/`hF` are fixed `N*N*8` typed arrays written
-  without a bounds check (out-of-range typed-array writes are silently
-  dropped). Peak usage measured on this map is ~200 of 12800 slots, so there
-  is large headroom, and the suite asserts it stays under 50%.
+```js
+const { boot, loadGameScript } = require('./harness');
 
-The only external asset is the Tabler icon webfont loaded from jsdelivr; the
-suite records it but does not require network access.
+const g = boot();                  // boots the game, returns handles
+const api = g.api;                 // window.SquadCommand.api - the public API
+
+g.els.ovb                          // the "Deploy" overlay button (stub element)
+g.fire(g.els.ovb, 'click');        // start the match through the real handler
+g.fire(g.els.cv, 'pointerdown', { clientX: 300, clientY: 200, button: 2 });
+g.fireWin('keydown', { code: 'KeyR' });
+g.step(60);                        // 60 frames = 1 second at dt 1/60
+api.error()                        // '' while healthy: the frame loop catches throws
+```
+
+* **real** — map generation, A\*, combat, AI, objectives, waves, input handling, HUD
+  code paths, the full draw-call sequence.
+* **stub** — rasterisation itself. Every Canvas2D call is counted and discarded, so
+  tests can assert *how much* is drawn (`g.els.cv.ctx.calls`) and how fast the logic
+  runs, but not on pixels.
+* `step(n, dt)` advances `n` animation frames of `dt` seconds (default `1/60`), which
+  is the only clock the game sees.
+
+`loadGameScript()` returns `{ script, html }` when a test wants to inspect the source
+(the `document structure` suite uses this to check tags, ids, CSS braces and that the
+file stays self-contained).
+
+## What the suites cover
+
+| suite | checks |
+| --- | --- |
+| document structure | one file, balanced tags, every `$('id')` resolves, CSS balanced, no external scripts, header docs present |
+| framework API | every registry populated, systems sorted, content lookups, `define*` validation, debug helpers |
+| map & world | boot state, original seeding (8 squads / 40 soldiers), determinism (identical map hash across boots), HQ/zone/cover/LOS queries |
+| pathfinding | 1,800 random queries cross-checked against an independent BFS (no illegal steps, no missed routes); pocket rate < 5% |
+| content: units, roles & buildings | the demo content: spec-ops roster, unarmed medic healing, sniper profile/tracer, HQ reinforcement, spotter fog, outpost capture + bonus objective |
+| controls & interaction | deploy cost/cap, selection, right-click orders, grenade mode, pause, zoom, minimap, resize, touch, HUD buttons built from content |
+| objectives & win/lose | capture enemy HQ → Victory, lose your HQ → Defeat, wipe-outs, terminal outcomes, custom `api.end()` |
+| extending the game through the public API | registers a new weapon/role/squad/building/behaviour/system/order/command/objective at runtime and plays with them |
+| stability & performance | unattended long match, 15-minute input fuzz, pool bounds, frame budget, draw-call volume |
+
+Everything it asserts is public API: a test that needs a situation builds it with
+`api.debug.spawnUnit/spawnBuilding/teleportSquad/clearSquads/setCp/skipWaves`, and a
+test that checks visuals checks the documented draw facade or HUD elements instead of
+pixels.
+
+## Notes for extending the game
+
+* The extension points (units, roles, weapons, buildings + behaviours, map objects,
+  systems, orders, objectives, waves, commands) and their JSDoc types are documented in
+  the header of `index.html` (sections `[1/7]`…`[7/7]`).
+* When you add content, add a check to the relevant suite — every check name is written
+  to be readable as a statement about the game.
+* `api.error()` returning non-empty means the frame loop caught a throw; the
+  `stability` suite fails loudly in that case, which is the cheapest way to catch a
+  broken content hook (e.g. the sniper AI bug where all four wrong assertions lived in
+  the test, not the game).
