@@ -261,8 +261,10 @@
         </div>
         <div id="cards"></div>
         <div id="hint">Click or drag to select squads · right-click to move or attack · right-drag to set facing · G
-            grenade · F formation · X stop · R deploy · 1–6 squads · WASD, arrows, wheel or minimap for camera · P pause. The
-            toolbar deploys each squad type; every squad type, building and objective is registered through the API at the top of
+            grenade · T anti-tank skill · F formation · X stop · R deploy · 1–6 squads/armour · WASD, arrows, wheel or
+            minimap for camera · P pause. The
+            toolbar deploys each squad type; every squad type, building and objective is registered through the API at
+            the top of
             the script — see window.SquadCommand.api.
         </div>
     </div>
@@ -289,6 +291,18 @@
                                    └─ squad rosters live on the unit spec (`roles`), one entry per soldier
              new weapon            api.defineWeapon({ id, range, burst, dmg, acc, mag, rt, ... })
              new map object        api.defineObject({ type, w, h, blocks, sprite })
+             new vehicle type      api.defineVehicle({ id, name, cost, hp, speed, turn, turretTurn,
+                                                       weapon, armour:{front,side,rear}, modules:[...],
+                                                       body:{hull,turret,barrel,track}, r, sight })
+                                   ├─ example: 'mediumtank' (player) and 'heavytank' (enemy waves)
+                                   ├─ needs no new code: hull + turret slew, shells, armour angles,
+                                   │  ground shadow, module damage and repair all run off the data
+                                   └─ then list it: api.factions().player.vehicles.push('mediumtank')
+             new vehicle module    api.defineModule({ id, name, repair, effect, mul, badge })
+                                   ├─ effect: 'immobile' (tracks), 'no-fire' (gun), 'slow' (engine)
+                                   └─ knocked out by rockets (weapon.pen), cannons and the disable skill
+             new armour-piercing   api.defineWeapon({ ..., shell:true, pen:.78, arc:2.2, ap:true,
+                                       aoe:1.7, shellSpeed:24, moduleChance:.22 })
              new building type     api.defineBuilding({ id, name, w, h, team, blocks, cover,
                                                        capturable, behaviours:[{ id, ... }] })
              new building rule     api.defineBuildingBehaviour(id, { init, tick, vision, draw, captured })
@@ -300,28 +314,37 @@
              new command           api.defineCommand({ id, key, label, run(api) })
              new objective         api.defineObjective({ id, test, with, result, hold, text })
              new wave              api.registerWave({ delay, squads:[{ unit, count }], message, colour })
+                                   ├─ `unit` may name a vehicle type: the wave spawns a tank instead
+                                   ├─ example: waves 7-9 send 'heavytank' and 'atteam'
                                    └─ `delay` is the seconds this wave waits before it spawns
              new map layout        GAME.starts / GAME.enemySpawns / GAME.playerHq / GAME.enemyHq
              new sprite colours    portrait on the unit spec; GAME.names for squad callsigns
 
            API MAP — where to look in the public API object (see section [7/7] for the full object)
              state        api.squads/soldiers/buildings/objects/zones/bullets/nades/parts/corpses/messages
+                          api.vehicles/shells   (armour, wrecks included) · api.playerVehicles/
+                          enemyVehicles (live only) · api.playerForce (squads + live armour)
                           api.playerSquads/enemySquads/selection/commandPoints/kills/wave/waveTimer/clock
                           api.state/playing/objectiveText/error/errorStack/centroid/camera/keys
              world        api.world (N, ground, block, statics(), roads(), starts, HQ, garrison, ...)
                           api.findPath/los/segClear/walkable/freeSpot/coverAt/roofAt/buildingAt
              content      api.registry (raw arrays) · api.unit/role/weapon/building/units()/factions()
+                          api.vehicle/vehicleTypes()/module(id)
              define*      api.defineUnit/Role/Weapon/Building/BuildingBehaviour/Object/Structure/
-                          Order/System/Objective/Command/registerWave
+                          Order/System/Objective/Command/Vehicle/Module/registerWave
              actions      api.deploy/deployUnit/makeSquad/addSoldier/order/moveTo/attackMove/command/
                           boxSel/clickSel/throwNade/explode/damage/kill/heal/msg/end/centerOn/shake
+             armour       api.makeVehicle/hitVehicle/armourZone/killVehicle/disableModule/repairModule/
+                          moduleState/useAbility/abilityReady/abilityTarget   (angle-of-attack damage)
+             lighting     api.light(dx,dy)/sun()/setSun({az,el,amb})/sunVec()   (sun shading + shadows)
              view / fog   api.view.tile/visibleAt/frozen/uptodate/reveal/revealAll  (states: 0 unseen,
                           1 seen, 2 visible) · api.reveal(x, y, r) shorthand
              ui           api.ui.hud/message/objectiveText/nadeMode/setNadeMode/showOverlay/overlayText/
                           togglePause/screen/zoom/setZoom/screenToWorld/worldToScreen
              audio        api.audio (procedural; safe to call with no AudioContext)
              debug        api.debug.setCp/addCp/setWave/skipWaves/setWaveTimer/setState/setKills/
-                          teleportSquad/killSquad/clearSquads/spawnBuilding/spawnUnit
+                          teleportSquad/killSquad/clearSquads/spawnBuilding/spawnUnit/spawnVehicle/
+                          setVehicleHp/clearVehicles
                           — every helper a test needs to set a situation up in one call
 
            TYPE DEFINITIONS (lightweight JSDoc; `node test/run.js` type-checks nothing, this is for
@@ -409,6 +432,31 @@
              @property {object}  [data]          free-form tunables: captureTime, reinforce, deployFrom
              @property {BuildingBehaviour[]} [behaviours]
 
+           @typedef {Object} ModuleSpec        one breakable tank module (see api.defineModule)
+             @property {string} id
+             @property {string} name        shown on the HUD when the module is down
+             @property {number} repair      seconds until it comes back on its own
+             @property {string} effect      'immobile' | 'no-fire' | 'slow'  (see moduleState)
+             @property {number} [mul]       multiplier the effect applies (engine slow = .25)
+             @property {string} [badge]     colour of the HUD pip / hit flash
+
+           @typedef {Object} VehicleSpec       a tank type (see api.defineVehicle)
+             @property {string}  id, name
+             @property {number}  [cost]         command points to deploy (player side)
+             @property {number}  hp, speed      hit points; tiles per second
+             @property {number}  [turn]         hull slew rate, rad/s          (default 1.2)
+             @property {number}  [turretTurn]   turret traverse rate, rad/s     (default 1.1)
+             @property {string}  weapon         weapon id ('cannon'): shell:true fires a projectile
+             @property {object}  armour         { front, side, rear }: damage multiplier keyed by the
+                                                attack angle relative to the hull (front = hit head-on)
+             @property {string[]}[modules]      module ids; each can be knocked out and repairs
+             @property {number}  [r]            body radius in tiles (placement, collision, picking)
+             @property {object}  [body]         palette { hull, hull2, turret, barrel, track, trim }
+             @property {number}  [sight]        auto-target radius in tiles
+             @property {string}  [teamRole]     'player' | 'enemy' — who may deploy and command it
+             @property {object}  [data]         free-form: leash, strategy hints for the AI
+             @property {function}[draw]         (veh, draw, time, api) extra painting, hull space
+
            @typedef {Object} System            a simulation rule, run once per fixed step
              @property {string} id
              @property {number} order      lower runs first; see ORDER below
@@ -426,14 +474,22 @@
              @property {string} [name]     label used by the "not ready" message
 
            ORDER — built-in system ordering (defineSystem gives an explicit number instead)
-             -100  map / fog-of-war            FOGC
-              -50  unit behaviour (movement, weapons, roles)
-                0  structure behaviour
-               10  corpses and decals
-               50  cleanup, capture, reinforcement
-               60  objective evaluation
-               70  campaign (waves, spawns, match hooks)
-               80  retention (trims corpses/messages)
+             -100  map / fog-of-war                 order: FOGC
+              -50  squad behaviour                  (movement, orders, roles)          UNITS
+              -49  vehicle behaviour                (hull, turret, main gun, modules, repair)
+              -48  soldier behaviour                (individual movement, weapons, wounds)
+              -47  projectiles                      (bullets, grenades, vehicle shells)
+              -46  particles                        (blood, smoke, sparks, debris)
+                0  structure behaviour              BUILDINGS
+               10  corpses and decals                CORPSES
+               50  cleanup, capture, reinforcement    CLEANUP
+               51  HQ reinforcement spawner
+               60  objective evaluation               OBJECTIVES
+               68  enemy armour AI                    (just before the infantry AI)
+               69  enemy infantry AI
+               70  campaign (waves, spawns, hooks)    CAMPAIGN
+             71/72  command points, sound budget
+               80  retention (trims corpses/messages) RETENTION
 
            STATE
              squad = { id, type, name, team, soldiers[], alive, count, ax, ay, facing, want, ff,
@@ -446,6 +502,14 @@
              building instance = { type, id, i, j, w, h, x, y, team, data, flags, hp, dead, behaviours,
                                    blocks, cover, capturable, capR, capTime, capture, zone }
              zone (from the 'flag' behaviour) = { team, x, y, cap }   cap 0..1 = capture progress
+             vehicle = { type, id, team, ax, ay, r, hull, hullWant, turret, turretWant, gunPitch,
+                         traverse, facing, want, ff, hp, maxHp, dead, deadT, path, order, amove,
+                         speed, sight, standoff, pad, cd, flash, recoil, smoke, hitT, modHit,
+                         modHitT, alertT, target, scan, think, ai, home, goal, wheel, bank, tilt,
+                         modules{ id: secondsLeft }, lastZone, lastMult, lastDeflect, name }
+                        hull/turret/modules are public: a mod may rotate, break or repair them.
+             shell   = { kind:'shell'|'rocket', x0,y0,x1,y1, x,y,z, t, dur, arc, w, src, team,
+                         tr (tracer colour), d }   — flight is ballistic; impact runs blast()
            ══════════════════════════════════════════════════════════════════════════════════════════ */
         (() => {
             /* ────────────────────────────────────────────────────────────────────────────────────
@@ -472,12 +536,14 @@
             const REG = {
                 weapons: [], roles: [], units: [], buildings: [], objects: [], structures: [],
                 portraits: [], behaviours: [], systems: [], orders: [], objectives: [], waves: [],
+                vehicles: [], modules: [],
             };
             const defineRole = defStore(REG.roles, 'role');
             const defineUnit = defStore(REG.units, 'unit');
             const defineBuilding = defStore(REG.buildings, 'building');
             const defineObject = defStore(REG.objects, 'object', 'type');
             const defineOrder = defStore(REG.orders, 'order');
+            const defineVehicle = defStore(REG.vehicles, 'vehicle');
             function defineSystem(spec) {                                  // keeps REG.systems sorted, so systems
                 let i = REG.systems.length;                                // registered at runtime also run in order
                 while (i > 0 && REG.systems[i - 1].order > spec.order) i--;
@@ -487,6 +553,7 @@
             const getRole = id => REG.roles.find(r => r.id === id);
             const getWeapon = id => WEAPONS[id];
             const getBuilding = id => REG.buildings.find(b => b.id === id);
+            const getVehicle = id => REG.vehicles.find(v => v.id === id);
 
             /* ---- world constants ---- */
             const N = 40, HW = 32, HH = 16, NN = N * N, GOX = N * HW;
@@ -496,13 +563,17 @@
 
             /* ---- mutable game state (single source of truth) ---- */
             let squads = [], soldiers = [], corpses = [], bullets = [], nades = [], parts = [],
-                rings = [], lights = [], marks = [], msgs = [], flags = [], buildings = [];
+                rings = [], lights = [], marks = [], msgs = [], flags = [], buildings = [],
+                vehicles = [], shells = [];
             let statics = [], water = [], BC = [], GARR = [], SEGS = [];
             let state = 'start', gt = 0, cp = 60, kills = 0, waveT = 70, waveI = 0, eNade = 10, sqId = 0,
-                nadeMode = false, shake = 0, visT = 0, hudT = 0, mmT = 0, shotB = 6, shotT = 0, err = '',
-                hover = null, hoverSq = null, drag = null, edgeT = 0, lastKey = { k: '', t: 0 }, errStack = '';
+                nadeMode = false, atMode = false, shake = 0, visT = 0, hudT = 0, mmT = 0, shotB = 6, shotT = 0, err = '',
+                hover = null, hoverSq = null, hoverVeh = null, drag = null, edgeT = 0, lastKey = { k: '', t: 0 }, errStack = '';
             const sel = new Set(), keys = new Set(), cam = { x: 0, y: 0, z: 1 }, ptr = { x: 0, y: 0, in: false };
-            const cent = q => { const n = q.soldiers.length; if (!n) return { x: q.ax, y: q.ay }; let x = 0, y = 0; for (const s of q.soldiers) { x += s.x; y += s.y } return { x: x / n, y: y / n } };
+            /* centre of a squad (its soldiers) or of any single body (a vehicle): every
+               consumer of `cent` works on squads, soldiers and vehicles alike */
+            const cent = q => { const n = q.soldiers ? q.soldiers.length : 0; if (!n) return { x: q.ax, y: q.ay }; let x = 0, y = 0; for (const s of q.soldiers) { x += s.x; y += s.y } return { x: x / n, y: y / n } };
+            const entPos = o => o.x !== undefined ? { x: o.x, y: o.y } : { x: o.ax, y: o.ay };
 
             /* ---- design constants ---- */
             const GAME = {
@@ -513,6 +584,8 @@
                 sight: 9.5, detect: 10, leash: 11, grenadeRange: 6.5, captureRadius: 2.6, captureTime: 10,
                 startingCp: 60, cpIncome: 1.5, cpPerKill: 15,
                 reinforcement: { radius: 5.5, seconds: 3 },
+                vehicleCap: 3,
+                sun: { az: -2.35, el: .55, amb: .42 },       // lighting: screen azimuth (rad), elevation, ambient
                 headquarters: { captureRadius: 4 },
             };
             const ORDER = { FOGC: -100, UNITS: -50, BUILDINGS: 0, CORPSES: 10, CLEANUP: 50, OBJECTIVES: 60, CAMPAIGN: 70, RETENTION: 80 };
@@ -530,6 +603,18 @@
             defineWeapon({ id: 'lmg', name: 'LMG', range: 8.5, burst: 7, iv: .075, c0: 1.3, c1: 2, dmg: 11, acc: .38, mag: 70, rt: 4, sound: 'heavy' });
             defineWeapon({ id: 'sniper', name: 'Sniper', range: 11, burst: 1, iv: .2, c0: 1.6, c1: 2.4, dmg: 42, acc: .82, mag: 5, rt: 2.8, tracer: 'rgba(200,235,255,.95)' });
             defineWeapon({ id: 'none', name: 'Unarmed', range: 0, burst: 0, dmg: 0, acc: 0, mag: 0, rt: 0, sound: null });
+            /* Anti-vehicle weapons. `pen` is the penetration rating compared against the
+               target's `armour[zone]`: pen/armour < 1 can ricochet off the front plate,
+               pen/armour > 1 punches through for more damage. `shell: true` means the shot
+               flies as a ballistic projectile that bursts for `aoe` splash on impact. */
+            defineWeapon({
+                id: 'cannon', name: 'Cannon', range: 11.5, burst: 1, iv: .1, c0: 2.6, c1: 3.4, dmg: 90, acc: .85, mag: 1, rt: 3.6,
+                pen: 1.9, shell: true, shellSpeed: 30, arc: 3.4, aoe: 2.9, moduleChance: .12, sound: 'cannon', tracer: 'rgba(255,205,140,.95)',
+            });
+            defineWeapon({
+                id: 'bazooka', name: 'Bazooka', range: 9.5, burst: 1, iv: .1, c0: 1.1, c1: 1.9, dmg: 62, acc: .6, mag: 1, rt: 3.4,
+                pen: .78, shell: true, shellSpeed: 24, arc: 2.2, aoe: 1.7, moduleChance: .22, ap: true, sound: 'rocket', tracer: 'rgba(255,170,120,.95)',
+            });
 
             /* ══════════════════════════ ROLES ══════════════════════════
                A role makes one soldier special. Weaponless roles never enter the
@@ -540,6 +625,18 @@
             defineRole({ id: 'lmg', name: 'Machine gunner', weapon: 'lmg', salvo: true, big: true });
             defineRole({ id: 'rifle', name: 'Rifleman', weapon: 'rifle', salvo: true });
             defineRole({ id: 'sniper', name: 'Sniper', weapon: 'sniper', salvo: false, badge: '#9fd8ff' });
+            defineRole({
+                id: 'bazooka', name: 'Bazooka', weapon: 'bazooka', badge: '#ffb36b', big: true,
+                hints: ['anti-tank: rockets hit hardest on the side and rear armour',
+                    'carries a shoulder tube; the backblast kicks up dust behind him'],
+                onDraw(s, api, draw) {
+                    /* a shoulder tube drawn along the aim, plus backblast when it fires */
+                    const a = s.aim, bx = Math.cos(a), by = Math.sin(a);
+                    draw.line(s.x - bx * .55, s.y - by * .55, s.x + bx * .75, s.y + by * .75, '#5a5f66', 3.4);
+                    draw.line(s.x - bx * .75, s.y - by * .75, s.x - bx * .95, s.y - by * .95, '#2c2f33', 3.8);
+                    if (s.flash > 0) draw.ring(s.x - bx * 1.1, s.y - by * 1.1, .5, 'rgba(210,190,160,.8)', Math.min(.5, s.flash * 5));
+                },
+            });
             defineRole({
                 id: 'medic', name: 'Medic', weapon: 'none', badge: '#7fd18b',
                 hints: ['unarmed: never fires', 'heals the most wounded soldier in the squad', 'can only revive a downed squadmate within 1.4 tiles'],
@@ -583,6 +680,25 @@
                 notes: ['fast, expensive, long sight', 'medic keeps the squad in the fight'],
             });
             defineUnit({
+                id: 'bazookas', name: 'Bazooka team', cost: 170, count: 2, speed: 1.85, teamRole: 'player', formation: 1, grenade: 0,
+                roles: [{ id: 'bazooka' }, { id: 'bazooka' }],
+                portrait: { head: '#6b5a2f', helm: '#4f4222', skin: '#c99a6e', band: '#ffd79a' },
+                ability: { id: 'disable', key: 'KeyT', name: 'Disable module', cd: 26, range: 10 },
+                data: { cpPerKill: GAME.cpPerKill, sight: 10.5 },
+                notes: ['two-man team, both carrying bazookas', 'no frag grenades: the rockets are the weapon'],
+                hints: ['armour-piercing damage depends on the angle of attack',
+                    'skill (T, then click a tank) knocks out a random module for a while'],
+            });
+            defineUnit({
+                id: 'atteam', name: 'AT team', cost: 0, count: 2, speed: 1.8, teamRole: 'enemy', formation: 1, grenade: 0,
+                roles: [{ id: 'bazooka' }, { id: 'bazooka' }],
+                portrait: { head: '#5f4a3f', helm: '#463229', skin: '#a8784f', band: '#ffb0a8' },
+                ability: { id: 'disable', key: 'KeyT', name: 'Disable module', cd: 26, range: 10 },
+                strategy: 'assault',
+                data: { sight: 10, cpPerKill: GAME.cpPerKill },
+                notes: ['enemy anti-tank team: hunts your armour with bazookas'],
+            });
+            defineUnit({
                 id: 'guards', name: 'Guard squad', cost: 0, count: 5, speed: 1.7, teamRole: 'enemy', formation: 1, grenade: 26,
                 roles: [{ id: 'sgt' }, { id: 'rifle' }, { id: 'rifle' }, { id: 'rifle' }, { id: 'lmg' }],
                 portrait: { head: '#6b3f3f', helm: '#522f2f', skin: '#a8784f', band: '#ffb0a8' },
@@ -607,6 +723,18 @@
                 notes: ['fast late-game wave', 'cannot be thrown from cover easily (sniper range)'],
             });
             for (const u of REG.units) UNIT[u.id] = u;
+
+            /* ══════════════════════════ VEHICLE MODULES ══════════════════════════
+               A module is a part of a vehicle that anti-tank weapons can knock out; it
+               repairs itself after `repair` seconds. The vehicle system reads `effect`:
+                 immobile  the vehicle cannot move or pivot its hull
+                 no-fire   the main gun cannot shoot (the turret still traverses)
+                 slow      the engine is out: speed drops to `mul` of normal */
+            const MODULES = {};
+            const defineModule = (id, spec) => (MODULES[id] = Object.assign({ id, name: id, repair: 8, effect: 'none', mul: 1, badge: '#ffd27a' }, spec));
+            defineModule('track', { name: 'Tracks', repair: 8, effect: 'immobile', badge: '#ffd27a' });
+            defineModule('gun', { name: 'Gun barrel', repair: 7, effect: 'no-fire', badge: '#ff9d7a' });
+            defineModule('engine', { name: 'Engine', repair: 11, effect: 'slow', mul: .25, badge: '#d8b4ff' });
 
             /* ══════════════════════════ BUILDINGS ══════════════════════════
                A BUILDING is a decoration (`structure`) plus any number of BEHAVIOURS.
@@ -756,18 +884,49 @@
                 },
             });
 
+            /* ══════════════════════════ VEHICLES ══════════════════════════
+               A vehicle is one 3D body with its own physics: the hull pivots and drives,
+               the turret traverses independently and must be aligned with the target
+               before the main gun fires. `armour` is the penetration threshold per facing
+               (front / side / rear) that anti-tank rockets are measured against. */
+            const VEHICLE = {};
+            defineVehicle({
+                id: 'mediumtank', name: 'Medium tank', cost: 400, teamRole: 'player', hp: 900, speed: 1.55, r: 1.15,
+                turn: 1.15, turretTurn: 1.05, sight: 12, weapon: 'cannon',
+                armour: { front: 1.0, side: .6, rear: .35 },
+                modules: ['track', 'gun', 'engine'],
+                body: { hull: '#5c6b4a', hull2: '#45523a', turret: '#63744f', track: '#2e3330', barrel: '#3a4046', trim: '#8af0a4' },
+                portrait: { head: '#5c6b4a', band: '#8af0a4' },
+                data: { cpPerKill: 60 },
+                notes: ['hull and turret turn separately; the gun fires only when the turret has settled',
+                    'front armour 1.0, side 0.6, rear 0.35 — rockets bite hardest from behind'],
+                hints: ['splash damage: shoots at squads as well as vehicles',
+                    'modules (track, gun, engine) can be disabled by bazooka teams'],
+            });
+            defineVehicle({
+                id: 'heavytank', name: 'Heavy tank', cost: 0, teamRole: 'enemy', hp: 1000, speed: 1.25, r: 1.2,
+                turn: .95, turretTurn: .85, sight: 11.5, weapon: 'cannon', strategy: 'assault',
+                armour: { front: 1.25, side: .7, rear: .4 },
+                modules: ['track', 'gun', 'engine'],
+                body: { hull: '#5f5a52', hull2: '#453f39', turret: '#6b655c', track: '#2b2a28', barrel: '#3d3a36', trim: '#ff9d7a' },
+                portrait: { head: '#5f5a52', band: '#ff9d7a' },
+                data: { cpPerKill: 90 },
+                notes: ['enemy armour: thicker front plate, slower turret'],
+            });
+            for (const v of REG.vehicles) VEHICLE[v.id] = v;
+
             /* ══════════════════════════ FACTIONS ══════════════════════════
                Starting squads per team + which unit ids each team may deploy. */
             const FACTIONS = {
                 player: {
                     id: 'player', team: 0, name: 'Task force',
-                    units: ['rifles', 'specops'], starts: GAME.starts,
+                    units: ['rifles', 'specops', 'bazookas'], vehicles: ['mediumtank'], starts: GAME.starts,
                     fields: { deployFrom: GAME.playerHq, capture: { wins: 'enemyHq' } },
                     colours: { band: '#8af0a4', ally: '#5aa8ff' },
                 },
                 enemy: {
                     id: 'enemy', team: 1, name: 'Garrison',
-                    units: ['guards', 'assault', 'raiders'], starts: [],
+                    units: ['guards', 'assault', 'raiders'], vehicles: [], starts: [],
                     fields: { capture: { wins: 'playerHq' } },
                     colours: { band: '#ff6b5b', ally: '#ff5b4f' },
                 },
@@ -934,7 +1093,8 @@
                 for (let k = 1; k < n; k++) { const i = Math.floor(ax + dx * k / n), j = Math.floor(ay + dy * k / n); if (i === ei && j === ej) continue; if (inb(i, j) && losB[j * N + i]) return false }
                 return true;
             }
-            function findPath(sx, sy, tx, ty) {
+            function findPath(sx, sy, tx, ty, pad) {
+                pad = pad == null ? .28 : pad;
                 let si = cl(Math.floor(sx), 0, N - 1), sj = cl(Math.floor(sy), 0, N - 1), ti = cl(Math.floor(tx), 0, N - 1), tj = cl(Math.floor(ty), 0, N - 1);
                 if (block[sj * N + si]) { const f = nearFree(si, sj); si = f[0]; sj = f[1] }
                 if (block[tj * N + ti]) { const f = nearFree(ti, tj); ti = f[0]; tj = f[1]; tx = ti + .5; ty = tj + .5 }
@@ -959,10 +1119,30 @@
                 const cells = []; let c = go; while (c !== -1 && c !== st) { cells.push(c); c = frm[c] } cells.reverse();
                 const pts = cells.map(c => ({ x: c % N + .5, y: ((c / N) | 0) + .5 })); pts[pts.length - 1] = { x: tx, y: ty };
                 const out = []; let ax = sx, ay = sy, i = 0;
-                while (i < pts.length) { let j = i; while (j + 1 < pts.length && segClear(ax, ay, pts[j + 1].x, pts[j + 1].y, .28)) j++; out.push(pts[j]); ax = pts[j].x; ay = pts[j].y; i = j + 1 }
+                while (i < pts.length) { let j = i; while (j + 1 < pts.length && segClear(ax, ay, pts[j + 1].x, pts[j + 1].y, pad)) j++; out.push(pts[j]); ax = pts[j].x; ay = pts[j].y; i = j + 1 }
                 return out;
             }
             function freeSpot(x, y) { if (!bp(x, y)) return { x, y }; const f = nearFree(Math.floor(x), Math.floor(y)); return { x: f[0] + .5, y: f[1] + .5 } }
+
+            /* ---- sun lighting --------------------------------------------------------
+               One function that every 3D body (tank hull, turret, wreck) uses: given the
+               world direction a surface faces, return its 0..1 brightness. The sun is
+               described by a screen-space azimuth plus an elevation; surfaces facing the
+               sun are bright, the rest fade to the ambient floor. `GAME.sun` can be
+               changed at runtime through api.setSun() and everything re-lights. */
+            function light(dx, dy) {
+                const l = hy(dx, dy) || 1, S = GAME.sun;
+                const sx = (dx - dy) / l, sy = (dx + dy) / l * .5, sl = hy(sx, sy) || 1;
+                const d = (sx / sl) * Math.cos(S.az) + (sy / sl) * Math.sin(S.az);
+                return cl(S.amb + (1 - S.amb) * Math.max(0, d) * (.35 + .65 * S.el), 0, 1);
+            }
+            /* multiply a #rrggbb colour by a brightness (cheap per-face shading) */
+            function shade(hex, k) {
+                const n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+                return 'rgb(' + Math.round(cl(r * k, 0, 255)) + ',' + Math.round(cl(g * k, 0, 255)) + ',' + Math.round(cl(b * k, 0, 255)) + ')';
+            }
+            /* the sun's screen-space direction plus how far it throws a shadow */
+            function sunVec() { const S = GAME.sun; return { x: Math.cos(S.az), y: Math.sin(S.az), len: cl(1 / Math.max(.25, Math.tan(cl(S.el, .15, 1.4))), .35, 2.6) } }
 
             /* ---- fog of war ---- */
             const fogC = document.createElement('canvas'); fogC.width = fogC.height = N;
@@ -980,6 +1160,7 @@
             function updVis() {
                 for (let k = 0; k < NN; k++)if (vis[k] === REVEAL.visible) vis[k] = REVEAL.seen;
                 for (const s of soldiers) if (!s.team) reveal(s.x, s.y, s.sight || GAME.sight);
+                for (const v of vehicles) if (!v.team && !v.dead) reveal(v.ax, v.ay, v.sight);
                 for (const u of FACTIONS.player.starts) reveal(u.x, u.y, 7);
                 for (const b of buildings) {                              // buildings with `vision` see for their owner
                     if (b.dead || b.team !== FACTIONS.player.team) continue;
@@ -1128,6 +1309,7 @@
             }
             /* pick the assignment of soldiers to formation slots with the shortest total walk */
             function assign(q) {
+                if (!q.soldiers) return;
                 const n = q.soldiers.length; if (!n) return;
                 const o = FORMS[q.form], c = Math.cos(q.facing), s = Math.sin(q.facing);
                 let best = PERMS[n][0], bc = 1e9;
@@ -1138,6 +1320,7 @@
                 for (let k = 0; k < n; k++)q.soldiers[k].slot = best[k];
             }
             function slots(q) {
+                if (!q.soldiers) return;
                 const o = FORMS[q.form], c = Math.cos(q.facing), s = Math.sin(q.facing);
                 for (const m of q.soldiers) {
                     const f = o[m.slot] || o[0];
@@ -1151,17 +1334,18 @@
                 }
             }
             function moveTo(q, x, y, face) {
-                const p = findPath(q.ax, q.ay, x, y);
+                const p = findPath(q.ax, q.ay, x, y, q.pad);
                 q.order = { type: 'move', x, y, face: face == null ? null : face };
                 q.path = p; q.ff = null; q.amove = false;
-                if (p.length && hy(p[0].x - q.ax, p[0].y - q.ay) > .3) q.facing = q.want = Math.atan2(p[0].y - q.ay, p[0].x - q.ax);
-                assign(q);
+                if (p.length && hy(p[0].x - q.ax, p[0].y - q.ay) > .3) { const a = Math.atan2(p[0].y - q.ay, p[0].x - q.ax); q.facing = q.want = a; if (q.hull !== undefined) q.hull = q.hullWant = a }
+                if (q.soldiers) assign(q);
             }
             function order(q, o) { q.order = o; q.path = []; q.rp = 0; q.ff = null; q.amove = false }
             function attackMove(q, x, y) { moveTo(q, x, y, null); q.amove = true }
 
             function upSquad(q, dt) {
                 q.gcd = Math.max(0, q.gcd - dt); q.alert = Math.max(0, q.alert - dt); q.rp -= dt;
+                if (q.apCd) q.apCd = Math.max(0, q.apCd - dt);                     // anti-tank skill cooldown
                 const o = q.order;
                 if (o) {
                     const def = REG.orders.find(d => d.id === o.type);                  // order ids are extensible
@@ -1214,6 +1398,12 @@
                     const sc = d - (e.sq === foc ? 6 : 0) - (e === s.target ? .8 : 0);
                     if (sc < bd && los(s.x, s.y, e.x, e.y)) { bd = sc; best = e }
                 }
+                for (const v of vehicles) {                                  // armour is a target: AP weapons prefer it
+                    if (v.dead || v.team === s.team) continue;
+                    const d = hy(v.ax - s.x, v.ay - s.y); if (d > s.weapon.range) continue;
+                    const sc = d - (v === foc ? 6 : 0) + (s.weapon.pen ? -1.5 : 5);      // small arms mostly ignore tanks
+                    if (sc < bd && los(s.x, s.y, v.ax, v.ay)) { bd = sc; best = v }
+                }
                 return best;
             }
             function upSoldier(s, dt) {
@@ -1238,14 +1428,14 @@
                 s.x += s.vx * dt; s.y += s.vy * dt; collide(s);
                 const sp = hy(s.vx, s.vy); s.moving = sp > .35; if (s.moving) s.walk += sp * dt * 9;
                 if ((s.covT -= dt) <= 0) { s.covT = .3; s.cov = nearCover(s) }
-                if (s.target && (s.target.dead || hy(s.target.x - s.x, s.target.y - s.y) > w.range + .4)) s.target = null;
+                if (s.target) { const tp = entPos(s.target); if (s.target.dead || hy(tp.x - s.x, tp.y - s.y) > w.range + .4) s.target = null }
                 if ((s.scan -= dt) <= 0) { s.scan = R0(.25, .45); const pr = s.target; s.target = w.range > 0 ? pickT(s) : null; if (s.target && !pr) s.cool = Math.max(s.cool, R0(.15, .5)) }
                 if (s.throwT > 0) { s.throwT += dt; if (!s.thrown && s.throwT > .25) { s.thrown = true; spawnNade(s, s.tp) } if (s.throwT > .55) s.throwT = 0 }
                 let want = s.moving ? Math.atan2(s.vy, s.vx) : q.facing;
                 if (w.range <= 0) { s.aim = turn(s.aim, s.throwT > 0 && s.tp ? Math.atan2(s.tp.y - s.y, s.tp.x - s.x) : want, 6 * dt); return }   // unarmed role
                 if (s.reload > 0) { s.reload -= dt; if (s.reload <= 0) s.mag = w.mag }
                 if (s.target && s.throwT <= 0) {
-                    const e = s.target; want = Math.atan2(e.y - s.y, e.x - s.x); s.aim = turn(s.aim, want, 10 * dt);
+                    const e = s.target, ep = entPos(e); want = Math.atan2(ep.y - s.y, ep.x - s.x); s.aim = turn(s.aim, want, 10 * dt);
                     if (s.reload <= 0 && Math.abs(ad(s.aim, want)) < .2) {
                         s.cool -= dt;
                         if (s.cool <= 0) {
@@ -1259,7 +1449,15 @@
                 else { s.aim = turn(s.aim, s.throwT > 0 && s.tp ? Math.atan2(s.tp.y - s.y, s.tp.x - s.x) : want, 6 * dt); if (s.reload <= 0 && s.mag < w.mag * .4) s.reload = w.rt }
             }
             function fire(s, e) {
-                const w = s.weapon, dx = e.x - s.x, dy = e.y - s.y, d = hy(dx, dy) || .1, ax = dx / d, ay = dy / d;
+                const w = s.weapon;
+                if (w.shell) {                                          // a launcher: the shot flies as a projectile
+                    const ep = entPos(e), d = hy(ep.x - s.x, ep.y - s.y) || .1;
+                    const boost = s.moving ? .8 : 1, dodge = e.moving ? .85 : 1;
+                    const spread = (1 - cl(w.acc * (1.25 - .55 * d / w.range) * boost * dodge, .05, .95)) * 1.7;
+                    spawnShell(s.x, s.y, 13, ep.x, ep.y, w, s, spread);
+                    return;
+                }
+                const dx = e.x - s.x, dy = e.y - s.y, d = hy(dx, dy) || .1, ax = dx / d, ay = dy / d;
                 let acc = w.acc * (1.25 - .55 * d / w.range) * (s.moving ? .55 : 1) * (e.moving ? .85 : 1) * (s.team ? .88 : 1);
                 const cvr = coverFor(e, s.x, s.y); if (cvr) acc *= .45;
                 acc = cl(acc, .05, .92);
@@ -1268,7 +1466,8 @@
                 else if (cvr && Math.random() < .6) { ex = cvr.x + R0(-.25, .25); ey = cvr.y + R0(-.25, .25); ez = 7; cov = cvr }
                 else { const sp = R0(-.9, .9), ov = R0(.3, 2.2); ex = e.x + ax * ov - ay * sp; ey = e.y + ay * ov + ax * sp; ez = 0 }
                 const x0 = s.x + ax * .32, y0 = s.y + ay * .32, len = hy(ex - x0, ey - y0) || .1;
-                bullets.push({ x0, y0, z0: 14, x1: ex, y1: ey, z1: ez, t: 0, dur: len / 42, len, team: s.team, hit, e, dmg: w.dmg * R0(.85, 1.15), src: s, cov, tr: w.tracer || null });
+                const veh = e.x === undefined ? e : null;                            // the target may be a tank
+                bullets.push({ x0, y0, z0: 14, x1: ex, y1: ey, z1: ez, t: 0, dur: len / 42, len, team: s.team, hit, e, veh, pen: w.pen || 0, dmg: w.dmg * R0(.85, 1.15), src: s, cov, tr: w.tracer || null });
                 s.flash = .06; s.recoil = 1;
                 P({ t: 4, x: x0, y: y0, z: 13, vx: -ay * R0(.8, 1.6) + R0(-.2, .2), vy: ax * R0(.8, 1.6) + R0(-.2, .2), vz: R0(50, 90), g: 420, bn: 2, life: 2.2, max: 2.2, rot: R0(0, 6), vr: R0(-20, 20) });
                 if (s.burst === w.burst) P({ t: 0, x: x0 + ax * .15, y: y0 + ay * .15, z: 14, vx: ax * .3, vy: ay * .3, vz: 6, dr: 1.5, life: .9, max: .9, s: 2, gr: 5, a: .35, c: '#d4d4cc' });
@@ -1279,7 +1478,10 @@
                     const b = bullets[i]; b.t += dt; if (b.t < b.dur) continue;
                     bullets.splice(i, 1);
                     const dx = (b.x1 - b.x0) / b.len, dy = (b.y1 - b.y0) / b.len;
-                    if (b.hit) {
+                    if (b.hit && b.veh) {                                        // a bullet that met armour
+                        hitVehicle(b.veh, b.dmg, b.src, b.x0, b.y0, 'bullet', b.pen, 0);
+                    }
+                    else if (b.hit) {
                         if (!b.e.dead) {
                             const e = b.e; damage(e, b.dmg, b.src, dx, dy, 0, 'bullet');
                             for (let k = 0; k < 5; k++)P({ t: 3, x: e.x, y: e.y, z: R0(9, 13), vx: dx * R0(.5, 1.5) + R0(-.4, .4), vy: dy * R0(.5, 1.5) + R0(-.4, .4), vz: R0(20, 60), g: 300, life: R0(.3, .5), max: .5, s: R0(1, 1.8), c: Math.random() < .5 ? '#7a1a12' : '#a3261b' });
@@ -1346,27 +1548,42 @@
                     }
                 }
             }
-            function explode(x, y, src) {
+            /* ---- blasts --------------------------------------------------------------
+               One explosion model. Soldiers take falloff damage (cover halves it), vehicles
+               take it through their armour - so a shell's `pen` and the direction it came
+               from both matter - and buildings can absorb it. `o.team` limits a blast to
+               the other side (tank shells should not shred their own infantry); a grenade
+               passes no team, which keeps the original "frags hurt everyone in range". */
+            function blast(x, y, r, dmg, src, o) {
+                o = o || {};
+                const team = o.team, axp = o.fromX == null ? x : o.fromX, ayp = o.fromY == null ? y : o.fromY;
                 for (const s of soldiers) {
-                    if (s.dead) continue;
-                    const d = hy(s.x - x, s.y - y); if (d >= 2.4 || !los(x, y, s.x, s.y)) continue;
+                    if (s.dead || (team != null && s.team === team)) continue;
+                    const d = hy(s.x - x, s.y - y); if (d >= r || !los(x, y, s.x, s.y)) continue;
                     const nx = d ? (s.x - x) / d : 1, ny = d ? (s.y - y) / d : 0;
-                    damage(s, 125 * Math.pow(1 - d / 2.4, .7) * (coverFor(s, x, y) ? .6 : 1), src, nx, ny, 1.3 - d / 2.4, 'explosive');
+                    damage(s, dmg * Math.pow(1 - d / r, .7) * (coverFor(s, x, y) ? .6 : 1), src, nx, ny, 1.3 - d / r, 'explosive');
                     if (!s.dead) { s.vx += nx * 2.5; s.vy += ny * 2.5 }
+                }
+                for (const v of vehicles) {
+                    if (v.dead || (team != null && v.team === team)) continue;
+                    const d = hy(v.ax - x, v.ay - y), rr = r + v.r * .6; if (d >= rr) continue;
+                    hitVehicle(v, dmg * Math.pow(1 - d / rr, .7), src, axp, ayp, 'explosive', (o.pen || 0) * .6, (o.moduleChance || 0) * .5);
                 }
                 for (const b of buildings) {                                              // buildings can absorb blasts
                     if (b.dead) continue;
-                    for (const bi of b.behaviours) if (bi.def && bi.def.onDamage && hy(b.x - x, b.y - y) < 2.6) bi.def.onDamage(b, 125 * Math.pow(1 - hy(b.x - x, b.y - y) / 2.4, .7), API);
+                    for (const bi of b.behaviours) if (bi.def && bi.def.onDamage && hy(b.x - x, b.y - y) < r + .2) bi.def.onDamage(b, dmg * Math.pow(1 - hy(b.x - x, b.y - y) / r, .7), API);
                 }
-                for (let k = 0; k < 14; k++)P({ t: 5, x, y, z: R0(2, 10), vx: R0(-1.5, 1.5), vy: R0(-1.5, 1.5), vz: R0(20, 90), dr: 3, life: R0(.35, .6), max: .6, s: R0(6, 10) });
+                const kk = cl(r / 2.4, .6, 1.8);
+                for (let k = 0; k < Math.round(14 * kk); k++)P({ t: 5, x, y, z: R0(2, 10) * kk, vx: R0(-1.5, 1.5), vy: R0(-1.5, 1.5), vz: R0(20, 90), dr: 3, life: R0(.35, .6), max: .6, s: R0(6, 10) * kk });
                 for (let k = 0; k < 12; k++)P({ t: 0, x: x + R0(-.4, .4), y: y + R0(-.4, .4), z: R0(4, 14), vx: R0(-.6, .6), vy: R0(-.6, .6), vz: R0(15, 35), dr: 1, life: R0(1.4, 2.4), max: 2.4, s: 6, gr: 16, a: .55, c: Math.random() < .5 ? '#4a4844' : '#64605a' });
                 for (let k = 0; k < 16; k++)P({ t: 6, x, y, z: 4, vx: R0(-3, 3), vy: R0(-3, 3), vz: R0(80, 200), g: 420, bn: 1, life: R0(.9, 1.4), max: 1.4, c: '#4a3a28', rot: R0(0, 6), vr: R0(-15, 15) });
                 for (let k = 0; k < 14; k++)P({ t: 2, x, y, z: 6, vx: R0(-6, 6), vy: R0(-6, 6), vz: R0(40, 160), g: 300, life: R0(.25, .45), max: .45 });
                 for (let k = 0; k < 10; k++) { const a = R0(0, TAU); P({ t: 0, x, y, z: 2, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, vz: 4, dr: 4, life: .8, max: .8, s: 4, gr: 10, a: .45, c: '#8c7b5a' }) }
-                rings.push({ x, y, t: 0, dur: .4 }); lights.push({ x, y, t: 0, dur: .35, r: 100 }); scorch(x, y);
+                rings.push({ x, y, t: 0, dur: .4 * kk }); lights.push({ x, y, t: 0, dur: .35, r: 100 * kk }); scorch(x, y);
                 const sx = ix(x, y) * cam.z + OX, sy = iy(x, y) * cam.z + OY;
-                shake = Math.min(1, shake + .7 * cl(1.2 - hy(sx - W / 2, sy - H / 2) / W, 0, 1)); sfxBoom(x, y);
+                shake = Math.min(1, shake + .7 * kk * cl(1.2 - hy(sx - W / 2, sy - H / 2) / W, 0, 1)); sfxBoom(x, y);
             }
+            function explode(x, y, src) { blast(x, y, 2.4, 125, src, {}) }
             /* ---- particles ---- */
             function P(o) { if (parts.length < 1400) parts.push(o) }
             function puff(x, y, z, n, c) {
@@ -1374,13 +1591,281 @@
                 for (let k = 0; k < 2; k++)P({ t: 6, x, y, z, vx: R0(-1, 1), vy: R0(-1, 1), vz: R0(40, 80), g: 300, bn: 0, life: .4, max: .4, c: '#5a4a35', rot: R0(0, 6), vr: 10 });
             }
 
+            /* ────────────────────────────────────────────────────────────────────────────────────
+               [ 4b ] VEHICLES — hull physics, turret traverse, armour, modules, shells
+               A vehicle is one 3D body. It reuses the order registry (the same `move` and
+               `attack` orders, the same path/waypoint fields) but has its own physics: the
+               hull pivots at `turn` rad/s, the turret traverses independently at
+               `turretTurn` rad/s, and the main gun only fires once the turret has settled on
+               its target. Damage arrives through `armour[zone]`, so where a rocket hits
+               (front / side / rear) decides whether it penetrates. Modules can be knocked
+               out by anti-tank teams and repair themselves after `repair` seconds.
+               ──────────────────────────────────────────────────────────────────────────────────── */
+
+            function makeVehicle(typeId, team, x, y, ai, face) {
+                const type = typeof typeId === 'string' ? getVehicle(typeId) : typeId;
+                if (!type) throw new Error('unknown vehicle type ' + typeId);
+                const p = freeSpot(x, y), w = getWeapon(type.weapon) || {};
+                const v = {
+                    type, id: ++sqId, team, ax: p.x, ay: p.y, r: type.r || 1.1,
+                    hull: face, hullWant: face, facing: face, want: face, ff: null,
+                    turret: face, turretWant: face, gunPitch: 0, traverse: false,
+                    hp: type.hp, maxHp: type.hp, alive: true, dead: false, deadT: 0,
+                    path: [], order: null, rp: 0, amove: false,
+                    speed: type.speed || 1.4, sight: type.sight || 11,
+                    standoff: (w.range || 8) * .7, pad: .5,          // keeps its distance; paths with more clearance
+                    cd: 0, flash: 0, recoil: 0, smoke: 0, hitT: 0, modHit: null, modHitT: 0, alertT: 0,
+                    target: null, scan: R0(0, .4), think: R0(0, .6), ai: ai || null,
+                    home: { x: p.x, y: p.y, f: face }, goal: null, wheel: 0, bank: 0, tilt: 0,
+                    modules: {}, lastZone: null, lastMult: 1, lastDeflect: false, name: '',
+                };
+                for (const m of (type.modules || [])) v.modules[m] = 0;
+                if (type.teamRole === 'player') {
+                    const used = new Set(vehicles.filter(o => !o.team && o.alive).map(o => o.name));
+                    v.name = GAME.names.find(n => !used.has(n)) || 'Armour';
+                }
+                vehicles.push(v);
+                return v;
+            }
+            const moduleOf = id => MODULES[id] || { id, name: id, repair: 8, effect: 'none', mul: 1, badge: '#ffd27a' };
+            /* what the knocked-out modules currently do to the vehicle */
+            function moduleState(v) {
+                let immobile = false, noFire = false, slow = 1;
+                for (const k in v.modules) if (v.modules[k] > 0) {
+                    const m = moduleOf(k);
+                    if (m.effect === 'immobile') immobile = true;
+                    else if (m.effect === 'no-fire') noFire = true;
+                    else if (m.effect === 'slow') slow = Math.min(slow, m.mul);
+                }
+                return { immobile, noFire, slow };
+            }
+            /* knock out a module ('track' | 'gun' | 'engine'): no id => a random one.
+               The repair timer starts immediately; messages keep both sides informed. */
+            function disableModule(v, id) {
+                if (!v || v.dead) return null;
+                const keys = Object.keys(v.modules); if (!keys.length) return null;
+                const key = id && v.modules[id] !== undefined ? id : keys[(Math.random() * keys.length) | 0];
+                const m = moduleOf(key), again = v.modules[key] > 0;
+                v.modules[key] = m.repair; v.modHit = key; v.modHitT = 1.8;
+                if (m.effect === 'slow' || m.effect === 'immobile') v.smoke = Math.max(v.smoke, .8);
+                for (let k = 0; k < 10; k++) P({ t: 2, x: v.ax + R0(-.5, .5), y: v.ay + R0(-.5, .5), z: R0(4, 12), vx: R0(-2, 2), vy: R0(-2, 2), vz: R0(20, 70), g: 320, life: R0(.2, .4), max: .4 });
+                if (!again) msg(v.type.name + ' — ' + m.name + ' disabled (' + Math.round(m.repair) + 's)', v.team === FACTIONS.player.team ? '#ffb09a' : '#9ff0d4');
+                return key;
+            }
+            function repairModules(v, dt) {
+                for (const k in v.modules) {
+                    if (v.modules[k] <= 0) continue;
+                    v.modules[k] -= dt;
+                    if (v.modules[k] <= 0) {
+                        v.modules[k] = 0; if (v.modHit === k) v.modHit = null;
+                        msg(v.type.name + ' — ' + moduleOf(k).name + ' back online', v.team === FACTIONS.player.team ? '#9ff0d4' : '#ffb0a8');
+                    }
+                }
+            }
+
+            /* which plate an attack arriving from (ax, ay) meets: 'front' (dead ahead of the
+               hull), 'side', or 'rear'. This is the angle of attack the armour model uses. */
+            function armourZone(v, ax, ay) {
+                const rel = Math.abs(ad(Math.atan2(ay - v.ay, ax - v.ax), v.hull));
+                return rel < 1.05 ? 'front' : rel > 2.09 ? 'rear' : 'side';
+            }
+            /* Damage routed through the armour. `pen` is the weapon's penetration rating
+               compared to the plate: pen/armour < 1 can ricochet off the front plate, while
+               > 1 punches through for more than nominal damage. Returns what happened, so
+               tests and content can read { zone, deflect, mult }. */
+            function hitVehicle(v, dmg, src, ax, ay, type, pen, moduleChance) {
+                if (!v || v.dead) return null;
+                const zone = armourZone(v, ax, ay), arm = (v.type.armour && v.type.armour[zone]) || 1;
+                const ratio = (pen == null ? .25 : pen) / arm;
+                const deflect = ratio < 1 && Math.random() < (1 - ratio) * .85;
+                const mult = deflect ? .04 : cl(ratio, .12, 1.6);
+                v.hp -= dmg * mult; v.hitT = .22; v.lastZone = zone; v.lastMult = mult; v.lastDeflect = deflect;
+                if (v.type.teamRole === 'player') v.alertT = 4;
+                const ia = Math.atan2(ay - v.ay, ax - v.ax), px = v.ax + Math.cos(ia) * v.r * .8, py = v.ay + Math.sin(ia) * v.r * .8;
+                if (deflect) for (let k = 0; k < 7; k++) P({ t: 2, x: px, y: py, z: R0(6, 12), vx: Math.cos(ia) * R0(2, 6) + R0(-1, 1), vy: Math.sin(ia) * R0(2, 6) + R0(-1, 1), vz: R0(20, 70), g: 320, life: R0(.15, .3), max: .3 });
+                else for (let k = 0; k < 7; k++) P({ t: 5, x: px, y: py, z: R0(5, 10), vx: R0(-1, 1), vy: R0(-1, 1), vz: R0(10, 45), dr: 3, life: R0(.2, .45), max: .45, s: R0(3, 6) });
+                if (v.hp <= 0) { killVehicle(v, Math.cos(ia), Math.sin(ia)); return { zone, deflect, mult, killed: true } }
+                if (!deflect && moduleChance && Math.random() < moduleChance * (zone === 'rear' ? 1.7 : zone === 'side' ? 1.2 : .6)) disableModule(v, null);
+                return { zone, deflect, mult, killed: false };
+            }
+            function killVehicle(v, dx, dy) {
+                if (v.dead) return;
+                v.dead = true; v.alive = false; v.hp = 0; v.target = null; v.path = []; v.order = null; v.smoke = 1;
+                sel.delete(v);
+                for (let k = 0; k < 26; k++) P({ t: 5, x: v.ax + R0(-.5, .5), y: v.ay + R0(-.5, .5), z: R0(6, 18), vx: R0(-2, 2), vy: R0(-2, 2), vz: R0(30, 120), dr: 3, life: R0(.5, .9), max: .9, s: R0(8, 15) });
+                for (let k = 0; k < 16; k++) P({ t: 0, x: v.ax + R0(-.5, .5), y: v.ay + R0(-.5, .5), z: R0(8, 18), vx: R0(-.8, .8), vy: R0(-.8, .8), vz: R0(20, 50), dr: 1, life: R0(1.6, 2.8), max: 2.8, s: 8, gr: 18, a: .6, c: '#3c3a37' });
+                for (let k = 0; k < 14; k++) P({ t: 6, x: v.ax, y: v.ay, z: 4, vx: R0(-3, 3), vy: R0(-3, 3), vz: R0(80, 200), g: 420, bn: 1, life: R0(1, 1.6), max: 1.6, c: '#3a2f22', rot: R0(0, 6), vr: R0(-15, 15) });
+                rings.push({ x: v.ax, y: v.ay, t: 0, dur: .6 }); lights.push({ x: v.ax, y: v.ay, t: 0, dur: .5, r: 180 }); scorch(v.ax, v.ay);
+                const sx = ix(v.ax, v.ay) * cam.z + OX, sy = iy(v.ax, v.ay) * cam.z + OY;
+                shake = Math.min(1, shake + .85 * cl(1.2 - hy(sx - W / 2, sy - H / 2) / W, 0, 1)); sfxBoom(v.ax, v.ay);
+                if (v.team !== FACTIONS.player.team) { cp += (v.type.data && v.type.data.cpPerKill) || 60; kills++; msg('Enemy ' + v.type.name + ' destroyed', '#ffd79a') }
+                else msg(v.type.name + ' ' + v.name + ' destroyed', '#ff8a7a');
+            }
+            /* keep the hull out of walls (with its own radius) and apart from other hulls */
+            function collideVeh(v) {
+                const r = v.r, ti = Math.floor(v.ax), tj = Math.floor(v.ay);
+                for (let i = ti - 2; i <= ti + 2; i++)for (let j = tj - 2; j <= tj + 2; j++) {
+                    if (inb(i, j) && !block[j * N + i]) continue;
+                    const cx = cl(v.ax, i, i + 1), cy = cl(v.ay, j, j + 1), dx = v.ax - cx, dy = v.ay - cy, d2 = dx * dx + dy * dy;
+                    if (d2 >= r * r) continue;
+                    if (d2 > 1e-6) { const d = Math.sqrt(d2); v.ax += dx / d * (r - d); v.ay += dy / d * (r - d) }
+                }
+                v.ax = cl(v.ax, .6, N - .6); v.ay = cl(v.ay, .6, N - .6);
+                for (const o of vehicles) {
+                    if (o === v || o.dead) continue;
+                    const dx = v.ax - o.ax, dy = v.ay - o.ay, d = hy(dx, dy), m = v.r + o.r;
+                    if (d < m && d > 1e-4) { const p = (m - d) / d * .5; v.ax += dx * p; v.ay += dy * p; o.ax -= dx * p; o.ay -= dy * p }
+                }
+            }
+            /* the gunner looks for the most dangerous target in sight; armour counts double */
+            function pickVehTarget(v) {
+                const sight = v.sight; let best = null, bd = 1e9;
+                for (const s of soldiers) {
+                    if (s.dead || s.team === v.team) continue;
+                    const d = hy(s.x - v.ax, s.y - v.ay); if (d > sight) continue;
+                    if (d < bd && los(v.ax, v.ay, s.x, s.y)) { bd = d; best = s }
+                }
+                for (const o of vehicles) {
+                    if (o === v || o.dead || o.team === v.team) continue;
+                    const d = hy(o.ax - v.ax, o.ay - v.ay); if (d > sight) continue;
+                    if (d * .8 < bd && los(v.ax, v.ay, o.ax, o.ay)) { bd = d * .8; best = o }
+                }
+                return best;
+            }
+            function upVehicle(v, dt, api) {
+                if (v.dead) { v.deadT += dt; return }
+                v.cd = Math.max(0, v.cd - dt); v.flash = Math.max(0, v.flash - dt);
+                v.recoil *= Math.exp(-dt * 8); v.hitT = Math.max(0, v.hitT - dt);
+                v.modHitT = Math.max(0, v.modHitT - dt); v.alertT = Math.max(0, v.alertT - dt);
+                v.smoke = Math.max(0, v.smoke - dt * .2);
+                repairModules(v, dt);
+                const st = moduleState(v);
+                if (v.order) { const def = REG.orders.find(d => d.id === v.order.type); if (def && def.run) def.run(v, v.order, dt, api); }
+                /* ---- hull: drive the path, pivot at `turn` rad/s, lean into turns ---- */
+                const sp = st.immobile ? 0 : v.speed * st.slow;
+                const fx0 = v.ax, fy0 = v.ay;
+                if (v.path.length && sp > 0) {
+                    const wpt = v.path[0], dx = wpt.x - v.ax, dy = wpt.y - v.ay, d = hy(dx, dy);
+                    if (d > .05) v.hullWant = Math.atan2(dy, dx);
+                    if (d <= Math.max(.12, sp * dt)) { v.ax = wpt.x; v.ay = wpt.y; v.path.shift(); if (!v.path.length && v.order && v.order.type === 'move') v.ff = v.order.face != null ? v.order.face : v.hullWant }
+                    else { v.ax += dx / d * sp * dt; v.ay += dy / d * sp * dt }
+                }
+                else if (v.ff != null) v.hullWant = v.ff;
+                const prevHull = v.hull;
+                v.hull = turn(v.hull, v.hullWant, (v.type.turn || 1.2) * (st.immobile ? 0 : 1) * dt);
+                v.facing = v.hull; v.want = v.hullWant;
+                const moved = hy(v.ax - fx0, v.ay - fy0), rate = cl(moved / Math.max(dt, 1e-4) / Math.max(.4, v.speed), 0, 1.4);
+                v.wheel = (v.wheel + moved * 4.4) % TAU;                                  // track phase
+                v.bank += (cl(-ad(v.hull, prevHull) / Math.max(dt, 1e-4) * .09, -.16, .16) - v.bank) * Math.min(1, dt * 5);
+                v.tilt += (cl(-rate * .05, -.06, .06) - v.tilt) * Math.min(1, dt * 5);
+                collideVeh(v);
+                /* ---- turret: independent traverse, gun settles only on the target ---- */
+                if ((v.scan -= dt) <= 0) { v.scan = R0(.2, .35); v.target = pickVehTarget(v) }
+                if (v.target) { const tp = entPos(v.target); if (v.target.dead || hy(tp.x - v.ax, tp.y - v.ay) > v.sight + 3.5) v.target = null }
+                let want = v.hull;
+                if (v.target) { const tp = entPos(v.target); want = Math.atan2(tp.y - v.ay, tp.x - v.ax) }
+                v.turretWant = want;
+                v.traverse = Math.abs(ad(v.turret, want)) > .07;
+                v.turret = turn(v.turret, want, (v.type.turretTurn || 1.1) * dt);
+                if (v.target) { const tp = entPos(v.target); v.gunPitch += (cl(hy(tp.x - v.ax, tp.y - v.ay) * .012, 0, .22) - v.gunPitch) * Math.min(1, dt * 3) }
+                else v.gunPitch += (0 - v.gunPitch) * Math.min(1, dt * 3);
+                /* ---- main gun: the shot waits for the turret to line up ---- */
+                const w = getWeapon(v.type.weapon);
+                if (w && !st.noFire && !v.traverse && v.target && v.cd <= 0) {
+                    const tp = entPos(v.target), d = hy(tp.x - v.ax, tp.y - v.ay);
+                    if (d <= w.range && los(v.ax, v.ay, tp.x, tp.y)) {
+                        const spread = 1 - cl(w.acc * (1.2 - .5 * d / w.range), .05, .95);
+                        spawnShell(v.ax + Math.cos(v.turret) * (v.r + .25), v.ay + Math.sin(v.turret) * (v.r + .25), 12, tp.x, tp.y, w, v, spread);
+                        v.cd = w.rt;
+                    }
+                }
+            }
+            function upVehicles(dt, api) {
+                for (const v of vehicles) upVehicle(v, dt, api);
+                vehicles = vehicles.filter(v => !v.dead || v.deadT < 26);        // a wreck burns, then leaves its scorch
+            }
+            /* ---- vehicle AI: one strategy function per vehicle.strategy ---------------- */
+            const VAI = {
+                assault(v, c, api) {
+                    if (v.target) {
+                        if (!v.order || v.order.type !== 'attack' || v.order.target !== v.target) order(v, { type: 'attack', target: v.target });
+                        return;
+                    }
+                    if (v.goal && (!v.order || v.order.type !== 'move' || hy((v.order.x || 0) - v.goal.x, (v.order.y || 0) - v.goal.y) > 4)) { moveTo(v, v.goal.x, v.goal.y, null); v.amove = true }
+                },
+                guard(v, c, api) {
+                    const leash = (v.type.data && v.type.data.leash) || GAME.leash, hd = hy(c.x - v.home.x, c.y - v.home.y);
+                    if (v.target && hd < leash) { if (!v.order || v.order.target !== v.target) order(v, { type: 'attack', target: v.target }); return }
+                    if (hd > 1.5 || (v.order && v.order.type === 'attack')) moveTo(v, v.home.x, v.home.y, v.home.f);
+                },
+            };
+            function thinkVehicle(v, api) { (VAI[v.type.strategy] || VAI.guard)(v, { x: v.ax, y: v.ay }, api) }
+
+            /* ---- ballistic shells: fired by tank guns and bazookas --------------------- */
+            function spawnShell(sx, sy, sz, tx, ty, w, src, spread) {
+                const d = hy(tx - sx, ty - sy) || .1;
+                const ex = tx + R0(-1, 1) * spread * d * .05, ey = ty + R0(-1, 1) * spread * d * .05;
+                shells.push({
+                    kind: w.ap ? 'rocket' : 'shell', x0: sx, y0: sy, z0: sz, x: sx, y: sy, z: sz, x1: ex, y1: ey,
+                    t: 0, dur: Math.max(.06, hy(ex - sx, ey - sy) / (w.shellSpeed || 30)),
+                    arc: (w.arc || 2) * .5 + d * .1, w, src, team: src.team, tr: w.tracer || null, d,
+                });
+                src.flash = .09; src.recoil = 1;
+                puff(sx, sy, sz - 3, src.sq ? 3 : 5, '#c9bf9e');
+                sfxShot(sx, sy, w.sound);
+            }
+            function upShells(dt) {
+                for (let i = shells.length - 1; i >= 0; i--) {
+                    const sh = shells[i]; sh.t += dt;
+                    const f = Math.min(1, sh.t / sh.dur);
+                    sh.x = sh.x0 + (sh.x1 - sh.x0) * f; sh.y = sh.y0 + (sh.y1 - sh.y0) * f;
+                    sh.z = sh.z0 * (1 - f) + sh.arc * 4 * f * (1 - f);
+                    if (Math.random() < dt * 34) P({ t: 0, x: sh.x, y: sh.y, z: sh.z, vx: R0(-.2, .2), vy: R0(-.2, .2), vz: R0(-2, 4), dr: 1.4, life: R0(.5, 1.1), max: 1.1, s: sh.kind === 'rocket' ? 2.2 : 3.2, gr: 6, a: .32, c: sh.kind === 'rocket' ? '#8f8b84' : '#6f6a60' });
+                    if (f >= 1) { shells.splice(i, 1); shellImpact(sh) }
+                }
+            }
+            function shellImpact(sh) {
+                const w = sh.w;
+                blast(sh.x, sh.y, w.aoe || 2.4, w.dmg, sh.src, { team: sh.team, pen: w.pen || 0, moduleChance: w.moduleChance || 0, fromX: sh.x0, fromY: sh.y0 });
+                for (let k = 0; k < 8; k++) P({ t: 6, x: sh.x, y: sh.y, z: 3, vx: R0(-3, 3), vy: R0(-3, 3), vz: R0(60, 160), g: 420, bn: 1, life: R0(.7, 1.1), max: 1.1, c: '#4a3a28', rot: R0(0, 6), vr: R0(-15, 15) });
+            }
+
+            /* ---- anti-tank skill: the bazooka team's "disable a module" ability ---------
+               `ability` on a squad type is data: { id, key, name, cd, range }. The `disable`
+               ability knocks out a random module of a vehicle in range - the player aims it
+               with the key (see input), the AI uses it on any armour it can see. */
+            function abilityReady(q) { return !!(q.type.ability && !(q.apCd > 0)); }
+            function abilityTarget(q) {
+                const a = q.type.ability; if (!a) return null;
+                const c = cent(q); let best = null, bd = 1e9;
+                for (const v of vehicles) {
+                    if (v.dead || v.team === q.team) continue;
+                    const d = hy(v.ax - c.x, v.ay - c.y); if (d > a.range) continue;
+                    if (d < bd && los(c.x, c.y, v.ax, v.ay)) { bd = d; best = v }
+                }
+                return best;
+            }
+            function useAbility(q, v) {
+                const a = q.type.ability; if (!a || !v || v.dead) return null;
+                const key = a.id === 'disable' ? disableModule(v, null) : null;
+                q.apCd = a.cd;
+                marks.push({ x: v.ax, y: v.ay, t: 0, dur: .5, c: '#ffd27a' });
+                return key;
+            }
+
             /* ---- unit behaviour system (runs in the UNITS tier) ---- */
             addSystems(
                 { id: 'behaviour.squads', order: ORDER.UNITS, run(dt, api) { for (const q of api.squads()) upSquad(q, dt) } },
-                { id: 'behaviour.soldiers', order: ORDER.UNITS + 1, run(dt, api) { for (const s of api.soldiers()) if (!s.dead) upSoldier(s, dt) } },
-                { id: 'projectiles', order: ORDER.UNITS + 2, run(dt, api) { upBullets(dt); upNades(dt) } },
-                { id: 'particles', order: ORDER.UNITS + 3, run(dt, api) { stepParticles(dt) } },
+                { id: 'behaviour.vehicles', order: ORDER.UNITS + 1, run(dt, api) { upVehicles(dt, api) } },
+                { id: 'behaviour.soldiers', order: ORDER.UNITS + 2, run(dt, api) { for (const s of api.soldiers()) if (!s.dead) upSoldier(s, dt) } },
+                { id: 'projectiles', order: ORDER.UNITS + 3, run(dt, api) { upBullets(dt); upNades(dt); upShells(dt) } },
+                { id: 'particles', order: ORDER.UNITS + 4, run(dt, api) { stepParticles(dt) } },
                 { id: 'decals', order: ORDER.CORPSES, run(dt, api) { stepCorpses(dt) } },
+                {
+                    id: 'ai.vehicles', order: ORDER.CAMPAIGN - 2, run(dt, api) {
+                        for (const v of vehicles) if (!v.dead && v.team === FACTIONS.enemy.team && (v.think -= dt) <= 0) { v.think = R0(.4, .7); thinkVehicle(v, api) }
+                    }
+                },
             );
             function stepParticles(dt) {
                 for (let i = parts.length - 1; i >= 0; i--) {
@@ -1416,16 +1901,16 @@
             /* ── orders: what a squad can be told to do ── */
             defineOrder({
                 id: 'move', name: 'Move',
-                run(q, o, dt, api) { if (!q.path.length) { q.order = null } },
+                run(q, o, dt, api) { if (!q.path.length) { q.order = null } },   // vehicles read the same fields
             });
             defineOrder({
                 id: 'attack', name: 'Attack',
                 run(q, o, dt, api) {
                     const t = o.target;
                     if (!t.alive) { q.order = null; q.path = []; return }
-                    const c = api.centroid(t), d = hy(c.x - q.ax, c.y - q.ay);
-                    if (d <= 6 && los(q.ax, q.ay, c.x, c.y)) { q.path = []; q.ff = Math.atan2(c.y - q.ay, c.x - q.ax) }
-                    else if (q.rp <= 0) { q.rp = 1; q.path = findPath(q.ax, q.ay, c.x, c.y) }
+                    const c = api.centroid(t), d = hy(c.x - q.ax, c.y - q.ay), stop = q.standoff || 6;
+                    if (d <= stop && los(q.ax, q.ay, c.x, c.y)) { q.path = []; q.ff = Math.atan2(c.y - q.ay, c.x - q.ax) }
+                    else if (q.rp <= 0) { q.rp = 1; q.path = findPath(q.ax, q.ay, c.x, c.y, q.pad) }
                 },
                 draw(q, o, draw) { if (o.target && o.target.alive) { const c = cent(o.target); draw.attackLine(q.ax, q.ay, c.x, c.y) } },
             });
@@ -1450,22 +1935,35 @@
             defineCommand({ id: 'deploy', key: 'KeyR', label: 'Deploy', run(api) { api.deploy() } });
             defineCommand({
                 id: 'formation', key: 'KeyF', label: 'Formation',
-                run(api) { for (const q of api.selection()) { q.form = (q.form + 1) % 3; assign(q) } if (api.selection().size) api.msg('Formation: ' + FN[[...api.selection()][0].form]) },
+                run(api) {
+                    const qs = [...api.selection()].filter(q => q.soldiers);       // armour has no formation
+                    for (const q of qs) { q.form = (q.form + 1) % 3; assign(q) }
+                    if (qs.length) api.msg('Formation: ' + FN[qs[0].form]);
+                },
             });
             defineCommand({
                 id: 'stop', key: 'KeyX', label: 'Stop',
-                run(api) { for (const q of api.selection()) { q.order = null; q.path = []; q.ff = q.facing } },
+                run(api) { for (const q of api.selection()) { q.order = null; q.path = []; q.ff = q.facing } },   // also stops armour
             });
             defineCommand({
                 id: 'grenade-mode', key: 'KeyG', label: 'Grenade mode',
                 run(api) {
-                    if ([...api.selection()].some(q => q.nade > 0 && q.gcd <= 0)) api.ui.setNadeMode(true);
+                    if ([...api.selection()].some(q => q.soldiers && q.nade > 0 && q.gcd <= 0)) api.ui.setNadeMode(true);
                     else api.msg(api.selection().size ? 'Grenade not ready' : 'Select a squad first', '#ffb09a');
                 },
             });
-            defineCommand({ id: 'select-all', key: 'KeyA', ctrl: true, label: 'Select all', run(api) { api.selection().clear(); for (const q of api.playerSquads()) api.selection().add(q) } });
-            defineCommand({ id: 'center', key: 'Space', label: 'Centre camera', run(api) { centerOn(api.selection().size ? [...api.selection()] : api.playerSquads()) } });
-            defineCommand({ id: 'cancel', key: 'Escape', label: 'Cancel', run(api) { if (nadeMode) nadeMode = false; else api.selection().clear() } });
+            defineCommand({ id: 'select-all', key: 'KeyA', ctrl: true, label: 'Select all', run(api) { api.selection().clear(); for (const q of api.playerForce()) api.selection().add(q) } });
+            defineCommand({
+                id: 'at-skill', key: 'KeyT', label: 'Anti-tank skill',
+                run(api) {
+                    const q = [...api.selection()].find(o => o.type.ability && !(o.apCd > 0));
+                    if (!q) { api.msg(api.selection().size ? 'Anti-tank skill recharging' : 'Select a bazooka team first', '#ffb09a'); return }
+                    api.ui.setAtMode(true);
+                    api.msg('Anti-tank skill ready — click a vehicle', '#ffd27a');
+                },
+            });
+            defineCommand({ id: 'center', key: 'Space', label: 'Centre camera', run(api) { centerOn(api.selection().size ? [...api.selection()] : api.playerForce()) } });
+            defineCommand({ id: 'cancel', key: 'Escape', label: 'Cancel', run(api) { if (nadeMode) nadeMode = false; else if (atMode) atMode = false; else api.selection().clear() } });
 
             /* ── AI strategies (one function per unit.strategy) ── */
             const AI = {
@@ -1514,6 +2012,10 @@
                 }
                 const strat = AI[q.type.strategy] || AI.guard;      // unknown/missing strategy: hold position like a guard
                 strat(q, c, best, bd, API);
+                if (abilityReady(q)) {                                             // bazooka teams knock out armour modules
+                    const v = abilityTarget(q);
+                    if (v && (v.type.teamRole === 'player' || Math.random() < .5)) useAbility(q, v);
+                }
                 if (q.nade > 0 && q.gcd <= 0 && eNade <= 0 && best && bd < GAME.grenadeRange + .5) {     // grenade the clustered
                     const t = best.sq, tc = cent(t);
                     let n = 0; for (const s of t.soldiers) if (hy(s.x - tc.x, s.y - tc.y) < 2) n++;
@@ -1532,13 +2034,25 @@
             defineWave({ delay: 55, squads: [{ unit: 'raiders', count: 1 }], message: 'Raiders spotted — they hunt you down', colour: '#d8b4ff' });
             defineWave({ delay: 55, squads: [{ unit: 'assault', count: 1 }, { unit: 'raiders', count: 1 }], message: 'Heavy push inbound', colour: '#ff9d7a' });
             defineWave({ delay: 55, squads: [{ unit: 'raiders', count: 1 }, { unit: 'assault', count: 1 }], message: 'Final wave — hold the line', colour: '#ff6b5b' });
+            /* the original six waves above are unchanged; armour joins the campaign after them */
+            defineWave({ delay: 60, squads: [{ unit: 'heavytank', count: 1 }], message: 'Enemy armour inbound', colour: '#ff9d7a' });
+            defineWave({ delay: 55, squads: [{ unit: 'atteam', count: 2 }], message: 'Enemy anti-tank teams spotted', colour: '#ffd79a' });
+            defineWave({ delay: 55, squads: [{ unit: 'heavytank', count: 1 }, { unit: 'assault', count: 1 }], message: 'Final push — armour and infantry', colour: '#ff6b5b' });
             function spawnWave(def, api) {
                 let n = 0;
                 for (const grp of def.squads) for (let k = 0; k < (grp.count || 1); k++) {
                     const sp = GAME.enemySpawns[(waveI + n) % GAME.enemySpawns.length];
-                    const q = makeSquad(grp.unit, FACTIONS.enemy.team, sp.x, sp.y, grp.ai || 'assault', PI / 4);
-                    q.goal = { x: GAME.playerHq.x - 1, y: GAME.playerHq.y - 1 };
-                    moveTo(q, q.goal.x, q.goal.y, null); q.amove = true; n++;
+                    const vt = getVehicle(grp.unit);
+                    if (vt) {                                                  // armour: hull + turret, drives at the HQ
+                        const v = makeVehicle(vt.id, FACTIONS.enemy.team, sp.x, sp.y, grp.ai || vt.strategy || 'assault', PI / 4);
+                        v.goal = { x: GAME.playerHq.x - 1.5, y: GAME.playerHq.y - 1.5 };
+                        moveTo(v, v.goal.x, v.goal.y, null); v.amove = true;
+                    } else {
+                        const q = makeSquad(grp.unit, FACTIONS.enemy.team, sp.x, sp.y, grp.ai || 'assault', PI / 4);
+                        q.goal = { x: GAME.playerHq.x - 1, y: GAME.playerHq.y - 1 };
+                        moveTo(q, q.goal.x, q.goal.y, null); q.amove = true;
+                    }
+                    n++;
                 }
                 msg(def.message || (n > 1 ? n + ' enemy squads inbound' : 'Enemy squad inbound'), def.colour || '#ffb36b');
             }
@@ -1554,7 +2068,7 @@
             defineObjective({
                 id: 'victory.wipe-out', result: 'victory',
                 text: () => 'Capture the enemy HQ',
-                test: (ctx, api) => !api.enemySquads().length && api.wave() >= REG.waves.length,
+                test: (ctx, api) => !api.enemySquads().length && !api.enemyVehicles().length && api.wave() >= REG.waves.length,
                 with: [{ at: 0, run: (ctx, api) => api.end(true, 'Enemy HQ secured in ' + clock() + ' with ' + kills + ' kills.') }],
             });
             defineObjective({
@@ -1564,7 +2078,7 @@
             });
             defineObjective({
                 id: 'defeat.wipe-out', result: 'defeat',
-                test: (ctx, api) => !api.playerSquads().length && api.commandPoints() < cheapestUnit(),
+                test: (ctx, api) => !api.playerSquads().length && !api.playerVehicles().length && api.commandPoints() < cheapestUnit(),
                 with: [{ at: 0, run: (ctx, api) => api.end(false, 'Your forces fell at ' + clock() + ' after ' + kills + ' kills.') }],
             });
             defineObjective({
@@ -1687,6 +2201,11 @@
             function cheapestUnit() { return Math.min(...FACTIONS.player.units.map(id => getUnit(id).cost)) }
             const playerSquads = () => squads.filter(q => q.type.teamRole === 'player');
             const enemySquads = () => squads.filter(q => q.type.teamRole !== 'player');
+            /* live armour only: a burning wreck stays in api.vehicles() for 26 s but no longer
+               takes up a deploy slot, counts toward a wipe-out, or accepts commands */
+            const playerVehicles = () => vehicles.filter(v => v.type.teamRole === 'player' && !v.dead);
+            const enemyVehicles = () => vehicles.filter(v => v.type.teamRole !== 'player' && !v.dead);
+            const playerForce = () => playerSquads().concat(playerVehicles());          // everything the player commands
             const clock = () => { const t = Math.floor(gt); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') };
             function msg(text, c) { msgs.unshift({ text, c: c || '#e8f0e0', t: 4.5 }); if (msgs.length > 4) msgs.pop() }
             function end(win, text) { state = win ? 'won' : 'lost'; showOv(win ? 'Victory' : 'Defeat', text, win ? 'Play again' : 'Try again') }
@@ -1713,6 +2232,18 @@
             function sfxShot(x, y, sound) {
                 if (!AC || !sndOn || shotB <= 0 || AC.state !== 'running' || sound === null) return;
                 shotB--;
+                if (sound === 'cannon' || sound === 'rocket') {                  // launchers: a low bark with a tail
+                    const t0 = AC.currentTime, o0 = sOut(x, y, .9), s0 = AC.createBufferSource(), f0 = AC.createBiquadFilter(), g0 = AC.createGain();
+                    s0.buffer = nbuf; s0.loop = true; f0.type = 'lowpass';
+                    f0.frequency.setValueAtTime(sound === 'cannon' ? 1200 : 900, t0); f0.frequency.exponentialRampToValueAtTime(90, t0 + .4);
+                    g0.gain.setValueAtTime(1, t0); g0.gain.exponentialRampToValueAtTime(.001, t0 + (sound === 'cannon' ? .5 : .42));
+                    s0.connect(f0); f0.connect(g0); g0.connect(o0); s0.start(t0); s0.stop(t0 + .55);
+                    const os0 = AC.createOscillator(), og0 = AC.createGain();
+                    os0.frequency.setValueAtTime(sound === 'cannon' ? 110 : 150, t0); os0.frequency.exponentialRampToValueAtTime(34, t0 + .3);
+                    og0.gain.setValueAtTime(.95, t0); og0.gain.exponentialRampToValueAtTime(.001, t0 + .35);
+                    os0.connect(og0); og0.connect(o0); os0.start(t0); os0.stop(t0 + .4);
+                    return;
+                }
                 const heavy = sound === 'heavy', t = AC.currentTime, o = sOut(x, y, heavy ? .5 : .4),
                     s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
                 s.buffer = nbuf; f.type = 'lowpass';
@@ -1747,6 +2278,17 @@
             /* ── deploy ── */
             function deployUnit(unitId) {
                 if (state !== 'play') return null;
+                const vt = getVehicle(unitId);
+                if (vt) {                                                        // vehicles have their own cap and cost
+                    if (playerVehicles().length >= GAME.vehicleCap) { msg('Armour limit reached', '#ffb09a'); return null }
+                    if (cp < vt.cost) { msg('Need ' + vt.cost + ' command points', '#ffb09a'); return null }
+                    cp -= vt.cost;
+                    const hq = GAME.playerHq;
+                    const v = makeVehicle(vt.id, FACTIONS.player.team, hq.x - 2, hq.y - 2, null, -3 * PI / 4);
+                    moveTo(v, hq.x - 6 + R0(-1, 1), hq.y - 6 + R0(-1, 1), null);
+                    msg(vt.name + ' ' + v.name + ' deployed', (vt.portrait && vt.portrait.band) || '#8af0a4');
+                    return v;
+                }
                 const type = getUnit(unitId); if (!type) return null;
                 if (playerSquads().length >= 6) { msg('Squad limit reached', '#ffb09a'); return null }
                 if (cp < type.cost) { msg('Need ' + type.cost + ' command points', '#ffb09a'); return null }
@@ -1920,6 +2462,130 @@
                 ctx.drawImage(spr, o.sx - def.ox, o.sy - def.oy, def.w, def.h);
             }
 
+            /* ---- vehicles: 3D bodies shaded by the sun, with a projected ground shadow ----
+               All geometry is built in hull space and yawed into the isometric projection:
+               a corner at (fl, sw) along the hull/side axis becomes a world offset and then a
+                              screen point. Faces are lit lazily through light(), so changing the sun
+                   (api.setSun) re-lights every vehicle without touching this code. */
+            const VBOX = {
+                corners: (ax, ay, yaw, fl, sw) => {
+                    const c = Math.cos(yaw), s2 = Math.sin(yaw), dx = c * fl - s2 * sw, dy = s2 * fl + c * sw;
+                    return { x: ix(ax + dx, ay + dy), y: iy(ax + dx, ay + dy) };
+                },
+            };
+            function drawVehicle(v, time) {
+                const T = v.type, B = T.body || {}, r = v.r, Hh = (8 + r * 3.2) * (v.dead ? .82 : 1);
+                const px = ix(v.ax, v.ay), py = iy(v.ax, v.ay);
+                const L = r * 1.05, Wd = r * .72;                                  // hull half length / half width
+                const lit = (dx, dy) => shade(B.hull || '#5c6b4a', light(dx, dy));  // per-face sun shading
+                const b = { hull: B.hull || '#5c6b4a', hull2: B.hull2 || '#45523a', turret: B.turret || '#63744f', track: B.track || '#2e3330', barrel: B.barrel || '#3a4046' };
+                const crashed = v.dead ? .55 : 1;
+                /* ---- ground shadow: every corner projected along the sun ---- */
+                const S = sunVec(), sk = Hh * .95 * S.len;
+                ctx.globalAlpha = .34 * crashed;
+                ctx.fillStyle = '#0d120c';
+                ctx.beginPath();
+                const cs = [[-L, -Wd], [L, -Wd], [L, Wd], [-L, Wd]];
+                cs.forEach(([fl, sw], n) => { const p = VBOX.corners(v.ax, v.ay, v.hull, fl, sw); n ? ctx.lineTo(p.x - S.x * sk, p.y - S.y * sk) : ctx.moveTo(p.x - S.x * sk, p.y - S.y * sk) });
+                ctx.closePath(); ctx.fill();
+                ctx.globalAlpha = 1;
+                /* ---- tracks: two bands with tread that scrolls with the wheels ---- */
+                const trackOff = Wd * .92, spd = v.modules.track > 0 ? 0 : 1;
+                for (const sw of [-trackOff, trackOff]) {
+                    const a = VBOX.corners(v.ax, v.ay, v.hull, -L * 1.08, sw), c2 = VBOX.corners(v.ax, v.ay, v.hull, L * 1.08, sw);
+                    ctx.strokeStyle = v.modules.track > 0 ? '#4a2b28' : b.track;                 // knocked-out tracks go dull red
+                    ctx.lineWidth = 4.6 * r; ctx.lineCap = 'butt';
+                    line(a.x, a.y - 1.5, c2.x, c2.y - 1.5);
+                    for (let k = 0; k < 7; k++) {
+                        const t = (k + (v.wheel / TAU * spd + 7) % 1) / 7, fl = -L * 1.08 + t * L * 2.16;
+                        const q = VBOX.corners(v.ax, v.ay, v.hull, fl, sw);
+                        ctx.strokeStyle = 'rgba(20,22,20,.85)'; ctx.lineWidth = 1.4;
+                        const q2 = VBOX.corners(v.ax, v.ay, v.hull, fl, sw + (sw < 0 ? -Wd * .22 : Wd * .22));
+                        line(q.x, q.y - 2.6, q2.x, q2.y - 2.6);
+                    }
+                }
+                /* ---- hull: an extruded box, faces lit by the sun ---- */
+                const pt = (fl, sw, up) => { const p = VBOX.corners(v.ax, v.ay, v.hull, fl, sw); return { x: p.x, y: p.y - up, gy: p.y } };
+                const cor = [pt(-L, -Wd, 0), pt(L, -Wd, 0), pt(L, Wd, 0), pt(-L, Wd, 0)];
+                const nrm = [[Math.sin(v.hull), -Math.cos(v.hull)], [Math.cos(v.hull), Math.sin(v.hull)], [-Math.sin(v.hull), Math.cos(v.hull)], [-Math.cos(v.hull), -Math.sin(v.hull)]];
+                const hid = 1.6 + v.tilt * 26, bank = v.bank * 26;                    // "angle": nose dip + lean in turns
+                const faces = cor.map((p, n) => ({ a: p, b2: cor[(n + 1) % 4], n, mid: (p.y + cor[(n + 1) % 4].y) / 2 }));
+                faces.sort((f1, f2) => f1.mid - f2.mid);
+                for (const f of faces) {
+                    const vis = f.mid > (cor[0].y + cor[2].y) / 2 - 1.5;              // only the two camera-facing sides
+                    if (!vis) continue;
+                    const col = lit(nrm[f.n][0], nrm[f.n][1]) * crashed;
+                    ctx.fillStyle = shade(b.hull2, col);
+                    ctx.beginPath(); ctx.moveTo(f.a.x, f.a.y - hid); ctx.lineTo(f.b2.x, f.b2.y - hid);
+                    ctx.lineTo(f.b2.x, f.b2.y - hid - Hh); ctx.lineTo(f.a.x, f.a.y - hid - Hh); ctx.closePath(); ctx.fill();
+                }
+                const topK = Math.min(1, light(0, 0) + .2) * crashed;
+                ctx.fillStyle = shade(b.hull, topK);
+                ctx.beginPath(); ctx.moveTo(cor[0].x, cor[0].y - hid - Hh); ctx.lineTo(cor[1].x, cor[1].y - hid - Hh);
+                ctx.lineTo(cor[2].x, cor[2].y - hid - Hh); ctx.lineTo(cor[3].x, cor[3].y - hid - Hh); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(cor[0].x, cor[0].y - hid - Hh); ctx.lineTo(cor[1].x, cor[1].y - hid - Hh);
+                ctx.lineTo(cor[2].x, cor[2].y - hid - Hh); ctx.lineTo(cor[3].x, cor[3].y - hid - Hh); ctx.closePath(); ctx.stroke();
+                /* ---- turret: its own body, traversing independently ---- */
+                const tp = { x: v.ax + Math.cos(v.hull) * .12, y: v.ay + Math.sin(v.hull) * .12 };
+                const tl = r * .62, tw = r * .5, th = Hh + 4.5;
+                const t0 = VBOX.corners(tp.x, tp.y, v.turret, tl, tw), t1 = VBOX.corners(tp.x, tp.y, v.turret, tl, -tw);
+                const t2 = VBOX.corners(tp.x, tp.y, v.turret, -tl, -tw), t3 = VBOX.corners(tp.x, tp.y, v.turret, -tl, tw);
+                const tcor = [t0, t1, t2, t3].map(p => ({ x: p.x, y: p.y - hid - th }));
+                const tn = [[Math.sin(v.turret), -Math.cos(v.turret)], [Math.cos(v.turret), Math.sin(v.turret)], [-Math.sin(v.turret), Math.cos(v.turret)], [-Math.cos(v.turret), -Math.sin(v.turret)]];
+                const tfaces = tcor.map((p, n) => ({ a: p, b2: tcor[(n + 1) % 4], n, mid: (p.y + tcor[(n + 1) % 4].y) / 2 }));
+                tfaces.sort((f1, f2) => f1.mid - f2.mid);
+                const tH = 7.5 * (v.dead ? .8 : 1);
+                for (const f of tfaces) {
+                    if (!(f.mid > (tcor[0].y + tcor[2].y) / 2 - 1)) continue;
+                    ctx.fillStyle = shade(b.turret, lit(tn[f.n][0], tn[f.n][1]) * crashed);
+                    ctx.beginPath(); ctx.moveTo(f.a.x, f.a.y); ctx.lineTo(f.b2.x, f.b2.y);
+                    ctx.lineTo(f.b2.x, f.b2.y - tH); ctx.lineTo(f.a.x, f.a.y - tH); ctx.closePath(); ctx.fill();
+                }
+                ctx.fillStyle = shade(b.turret, Math.min(1, light(0, 0) + .22) * crashed);
+                ctx.beginPath(); ctx.moveTo(tcor[0].x, tcor[0].y - tH); ctx.lineTo(tcor[1].x, tcor[1].y - tH);
+                ctx.lineTo(tcor[2].x, tcor[2].y - tH); ctx.lineTo(tcor[3].x, tcor[3].y - tH); ctx.closePath(); ctx.fill();
+                /* ---- gun barrel: follows the turret, rises with elevation ---- */
+                const gunOut = tcor[1], gunIn = tcor[0];
+                const bx = (gunIn.x + gunOut.x) / 2, by = (gunIn.y + gunOut.y) / 2 - tH;
+                const gd = Math.atan2(gunOut.y - gunIn.y, gunOut.x - gunIn.x);
+                const blen = r * (2.5 + Math.min(.5, v.recoil * .5)), rise = v.gunPitch * 30, rec = v.recoil * 3;
+                const mzx = bx + Math.cos(gd) * (blen - rec), mzy = by + Math.sin(gd) * (blen - rec) - rise;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = v.modules.gun > 0 ? '#7a3a30' : b.barrel;          // a knocked-out barrel sags
+                ctx.lineWidth = 2.8;
+                if (v.modules.gun > 0) {
+                    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(gd) * blen * .55, by + Math.sin(gd) * blen * .55 - rise * .4);
+                    ctx.lineTo(bx + Math.cos(gd + .5) * blen * .95, by + Math.sin(gd + .5) * blen * .95);
+                    ctx.stroke();
+                } else { ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(mzx, mzy); ctx.stroke() }
+                ctx.fillStyle = v.modules.gun > 0 ? '#7a3a30' : shade(b.barrel, 1.15);
+                ctx.fillRect(mzx - 2.2, mzy - 2.2, 4.4, 4.4);
+                /* ---- muzzle blast ---- */
+                if (v.flash > 0 && !v.dead) {
+                    const k = v.flash / .09;
+                    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .9 * k;
+                    ctx.drawImage(GLOW, mzx - 13, mzy - 13, 26, 26);
+                    ctx.globalAlpha = .85 * k; ctx.fillStyle = 'rgba(255,222,150,1)';
+                    const fx2 = Math.cos(gd), fy2 = Math.sin(gd);
+                    ctx.beginPath(); ctx.moveTo(mzx + fx2 * 15, mzy + fy2 * 15); ctx.lineTo(mzx - fy2 * 4, mzy + fx2 * 4);
+                    ctx.lineTo(mzx - fx2 * 4, mzy - fy2 * 4); ctx.lineTo(mzx + fy2 * 4, mzy - fx2 * 4); ctx.closePath(); ctx.fill();
+                    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+                }
+                if (v.hitT > 0) { ctx.globalAlpha = v.hitT * 3.4; ctx.fillStyle = '#ffd8c0'; ctx.beginPath(); ctx.moveTo(tcor[0].x, tcor[0].y - tH); ctx.lineTo(tcor[1].x, tcor[1].y - tH); ctx.lineTo(tcor[2].x, tcor[2].y - tH); ctx.lineTo(tcor[3].x, tcor[3].y - tH); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1 }
+                /* ---- engine smoke: light when damaged, heavy when the engine is out or burning ---- */
+                const hurt = v.dead ? 1 : Math.max(v.smoke, v.modules.engine > 0 ? .8 : 0, 1 - v.hp / v.maxHp > .5 ? .35 : 0);
+                if (hurt > .05 && Math.random() < hurt * .5) {
+                    const rx = v.ax - Math.cos(v.hull) * L * .9, ry = v.ay - Math.sin(v.hull) * L * .9;
+                    P({ t: 0, x: rx, y: ry, z: hid + Hh + 4, vx: R0(-.25, .25) - S.x * .06, vy: R0(-.25, .25) - S.y * .06, vz: R0(10, 26), dr: 1.2, life: R0(1.1, 2), max: 2, s: 5, gr: 14, a: .4, c: v.modules.engine > 0 || v.dead ? '#2e2c2a' : '#57534d' });
+                }
+                if (v.modHitT > 0) {                                              // module hit flash
+                    ctx.globalAlpha = v.modHitT * .8; ctx.fillStyle = moduleOf(v.modHit).badge;
+                    circ(px, py - hid - Hh - 12, 3.4); ctx.globalAlpha = 1;
+                }
+                if (v.type.draw) v.type.draw(v, paint, time, API);
+            }
+
             function render(time) {
                 const z = cam.z;
                 ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -1950,6 +2616,12 @@
                     ctx.strokeStyle = s.team ? '#ff6b5b' : sl ? '#8af0a4' : 'rgba(255,255,255,.55)';
                     ell(ctx, ix(s.x, s.y), iy(s.x, s.y), 7.5, 3.8); ctx.stroke();
                 }
+                for (const v of vehicles) {
+                    const sl = sel.has(v), hv = v === hoverVeh;
+                    if (!sl && !hv) continue; if (v.team && !visAt(v.ax, v.ay)) continue;
+                    ctx.strokeStyle = v.team ? '#ff6b5b' : sl ? '#8af0a4' : 'rgba(255,255,255,.55)';
+                    ctx.lineWidth = 1.6; ell(ctx, ix(v.ax, v.ay), iy(v.ax, v.ay), 15.5, 7.8); ctx.stroke();
+                }
                 for (const q of sel) {                                            // order/path previews (content-defined)
                     const def = q.order ? REG.orders.find(d => d.id === q.order.type) : null;
                     if (def && def.draw) def.draw(q, q.order, paint, API);
@@ -1958,6 +2630,19 @@
                 ctx.setLineDash([]);
                 for (const m of marks) { const k = m.t / m.dur, r = (1 - k) * 30 + 6; ctx.globalAlpha = 1 - k; ctx.strokeStyle = m.c; ctx.lineWidth = 2; ell(ctx, ix(m.x, m.y), iy(m.x, m.y), r, r / 2); ctx.stroke() }
                 ctx.globalAlpha = 1;
+                if (atMode) {
+                    for (const q of sel) {
+                        if (!q.soldiers || !q.type.ability) continue;
+                        const a = q.type.ability, c = cent(q), ready = abilityReady(q);
+                        ctx.setLineDash([5, 4]); ctx.strokeStyle = ready ? 'rgba(255,210,120,.8)' : 'rgba(255,140,120,.5)'; ctx.lineWidth = 1.5;
+                        ell(ctx, ix(c.x, c.y), iy(c.x, c.y), a.range * 45.25, a.range * 22.6); ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                    if (hoverVeh && hoverVeh.team !== FACTIONS.player.team) {
+                        ctx.strokeStyle = 'rgba(255,120,90,.9)'; ctx.lineWidth = 2;
+                        ell(ctx, ix(hoverVeh.ax, hoverVeh.ay), iy(hoverVeh.ax, hoverVeh.ay), 17, 8.6); ctx.stroke();
+                    }
+                }
                 if (nadeMode && ptr.in) {
                     const w = toW(ptr.x, ptr.y);
                     ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(255,120,90,.9)'; ctx.lineWidth = 1.5;
@@ -1976,10 +2661,12 @@
                 for (const o of indexedStatics()) if (inV(o.sx, o.sy)) dl.push(o);
                 for (const s of soldiers) { if (s.team && !visAt(s.x, s.y)) continue; if (!inV(ix(s.x, s.y), iy(s.x, s.y))) continue; s.d = s.x + s.y; dl.push(s) }
                 for (const g of nades) { g.d = g.x + g.y; dl.push(g) }
+                for (const v of vehicles) { if (v.team && !visAt(v.ax, v.ay) && !v.dead) continue; if (!inV(ix(v.ax, v.ay), iy(v.ax, v.ay))) continue; v.d = v.ax + v.ay - .35; dl.push(v) }
                 dl.sort((a, b) => a.d - b.d);
                 for (const o of dl) {
                     if (o.sq) drawSoldier(o);
                     else if (o.nade) drawNade(o, time);
+                    else if (o.hull !== undefined) drawVehicle(o, time);          // vehicles are the only bodies with a hull
                     else if (o.type === 'building') drawBuilding(o.inst);
                     else drawObj(o, time);
                 }
@@ -1989,6 +2676,14 @@
                         a = Q(f), c = Q(f0);
                     ctx.strokeStyle = b.team ? 'rgba(255,90,50,.45)' : 'rgba(255,190,70,.45)'; ctx.lineWidth = 2.6; line(a[0], a[1], c[0], c[1]);
                     ctx.strokeStyle = b.tr || (b.team ? 'rgba(255,215,190,.95)' : 'rgba(255,250,215,.95)'); ctx.lineWidth = 1; line(a[0], a[1], c[0], c[1]);
+                }
+                for (const sh of shells) {                                       // shells and rockets in flight
+                    const f = Math.min(1, sh.t / sh.dur), f2 = Math.max(0, f - .09);
+                    const q = t => { const x = sh.x0 + (sh.x1 - sh.x0) * t, y = sh.y0 + (sh.y1 - sh.y0) * t; return [ix(x, y), iy(x, y) - (sh.z0 * (1 - t) + sh.arc * 4 * t * (1 - t))] };
+                    const h = q(f), t2 = q(f2);
+                    ctx.strokeStyle = sh.tr || 'rgba(255,214,150,.95)'; ctx.lineWidth = 2.4;
+                    line(h[0], h[1], t2[0], t2[1]);
+                    ctx.fillStyle = 'rgba(255,244,214,.95)'; circ(h[0], h[1], 2.4);
                 }
                 ctx.globalCompositeOperation = 'source-over';
                 for (const p of parts) {
@@ -2024,6 +2719,17 @@
                     if (!s.team && s.reload > 0) { ctx.strokeStyle = '#e9eef2'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(x + 12, y + 1, 3, -PI / 2, -PI / 2 + TAU * (1 - s.reload / s.weapon.rt)); ctx.stroke() }
                     if (s.cov) { ctx.fillStyle = s.team ? '#ffb0a8' : '#bff5c9'; ctx.beginPath(); ctx.moveTo(x - 14, y - 2); ctx.lineTo(x - 10, y - 2); ctx.lineTo(x - 10, y + 1.5); ctx.lineTo(x - 12, y + 3.5); ctx.lineTo(x - 14, y + 1.5); ctx.closePath(); ctx.fill() }
                 }
+                for (const v of vehicles) {                                      // armour: hp bar + module pips
+                    if (v.team && !visAt(v.ax, v.ay)) continue;
+                    const down = Object.keys(v.modules).filter(k => v.modules[k] > 0);
+                    if (!(sel.has(v) || v === hoverVeh || v.team === FACTIONS.player.team || down.length)) continue;
+                    const [x, y] = TS(v.ax, v.ay, 40); if (x < -40 || x > W + 40 || y < -30 || y > H + 30) continue;
+                    const hp = Math.max(0, v.hp) / v.maxHp, w = 30;
+                    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - w / 2, y - 1, w, 4);
+                    ctx.fillStyle = v.team ? '#ff5b4f' : hp > .5 ? '#6ee07a' : hp > .25 ? '#f2c14e' : '#ff6b5b'; ctx.fillRect(x - w / 2 + 1, y, (w - 2) * hp, 2);
+                    down.forEach((k, n2) => { ctx.fillStyle = moduleOf(k).badge; ctx.fillRect(x - w / 2 + n2 * 6, y - 7, 4, 4) });
+                    if (v.modules.gun > 0) { ctx.fillStyle = '#ff9d7a'; ctx.fillText('✕', x + w / 2 + 6, y) }
+                }
                 ctx.font = '500 11px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 playerSquads().forEach((q, n) => {
                     const c = cent(q), [x, y] = TS(c.x, c.y, 40), t = (n + 1) + ' ' + q.name, w = ctx.measureText(t).width + 10, sl = sel.has(q);
@@ -2040,6 +2746,7 @@
                 ctx.globalAlpha = 1;
                 if (waveI < REG.waves.length && state === 'play') { const t = 'Enemy wave in ' + Math.max(0, Math.ceil(waveT)) + 's'; ctx.textAlign = 'right'; ctx.fillStyle = '#ffcf9a'; ctx.strokeText(t, W - 12, 18); ctx.fillText(t, W - 12, 18) }
                 if (nadeMode) { const t = 'Grenade: left-click a target, right-click to cancel'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffb09a'; ctx.strokeText(t, W / 2 - 60, H - 16); ctx.fillText(t, W / 2 - 60, H - 16) }
+                if (atMode) { const t = 'Anti-tank skill: click an enemy vehicle (Escape cancels)'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd27a'; ctx.strokeText(t, W / 2 - 60, H - 16); ctx.fillText(t, W / 2 - 60, H - 16) }
                 if (err) { ctx.textAlign = 'left'; ctx.fillStyle = '#ff8a7a'; ctx.fillText('Error: ' + err, 12, H - 14) }
             }
             function drawMM() {
@@ -2051,6 +2758,7 @@
                 mc.drawImage(minimapBase.canvas, 0, 0, w, h);
                 mc.setTransform(HW * s, HH * s, -HW * s, HH * s, GOX * s, 0); mc.drawImage(fogC, 0, 0); mc.restore();
                 for (const o of soldiers) { if (o.team && !visAt(o.x, o.y)) continue; mc.fillStyle = o.team ? '#ff5b4f' : sel.has(o.sq) ? '#9dffb5' : '#5aa8ff'; mc.fillRect((ix(o.x, o.y) + GOX) * s - 1.5 * d, iy(o.x, o.y) * s - 1.5 * d, 3 * d, 3 * d) }
+                for (const v of vehicles) { if (v.team && !visAt(v.ax, v.ay)) continue; mc.fillStyle = v.dead ? '#5a5a5a' : v.team ? '#ff3b2f' : sel.has(v) ? '#9dffb5' : '#3f8cff'; mc.fillRect((ix(v.ax, v.ay) + GOX) * s - 2.5 * d, iy(v.ax, v.ay) * s - 2.5 * d, 5 * d, 5 * d) }
                 for (const f of flags) { mc.fillStyle = f.team ? '#ff5b4f' : '#5aa8ff'; mc.fillRect((ix(f.x, f.y) + GOX) * s - 2.5 * d, iy(f.x, f.y) * s - 2.5 * d, 5 * d, 5 * d) }
                 for (const b of buildings) { if (b.zone) continue; mc.fillStyle = b.team === FACTIONS.player.team ? '#cfe3f8' : '#ff9d7a'; mc.fillRect((ix(b.x, b.y) + GOX) * s - 1.5 * d, iy(b.x, b.y) * s - 1.5 * d, 3 * d, 3 * d) }
                 mc.strokeStyle = 'rgba(255,255,255,.85)'; mc.lineWidth = d;
@@ -2066,17 +2774,51 @@
                same objects a hand-written script (or an LLM) gets from window.SquadCommand.api.
                ──────────────────────────────────────────────────────────────────────────────────── */
             function clampCam() { cam.x = cl(cam.x, -GOX, GOX); cam.y = cl(cam.y, 0, N * 32) }
+            /* Everything clickable returns a pick record:
+               { pos, sq, veh, team, x, y } - `sq` for soldiers, `veh` for armour. */
             function pickAt(x, y) {
-                let best = null, bd = 13 * Math.max(.8, cam.z);
+                let best = null, bd = 13 * Math.max(.8, cam.z), kind = null;
                 for (const s of soldiers) {
                     if (s.team && !visAt(s.x, s.y)) continue;
                     const d = hy(ix(s.x, s.y) * cam.z + OX - x, (iy(s.x, s.y) - 11) * cam.z + OY - y);
-                    if (d < bd) { bd = d; best = s }
+                    if (d < bd) { bd = d; best = s; kind = 'soldier' }
                 }
-                return best;
+                const vb = 20 * Math.max(.8, cam.z);
+                for (const v of vehicles) {
+                    if (v.dead || (v.team && !visAt(v.ax, v.ay))) continue;
+                    const d = hy(ix(v.ax, v.ay) * cam.z + OX - x, (iy(v.ax, v.ay) - 9) * cam.z + OY - y);
+                    if (d < vb && (kind !== 'soldier' || d <= bd)) { bd = d; best = v; kind = 'vehicle' }
+                }
+                if (!best) return null;
+                return kind === 'vehicle'
+                    ? { pos: best, veh: best, sq: null, team: best.team, x: best.ax, y: best.ay }
+                    : { pos: best, veh: null, sq: best.sq, team: best.team, x: best.x, y: best.y };
             }
             function selectOnly(q) { sel.clear(); if (q) sel.add(q) }
             function nadeSquad(w) { let b = null, bd = 1e9; for (const q of sel) if (q.nade > 0 && q.gcd <= 0) { const d = hy(q.ax - w.x, q.ay - w.y); if (d < bd) { bd = d; b = q } } return b }
+            /* ---- anti-tank skill --------------------------------------------------------
+               A squad type with an `ability` gets a targeted skill: the closest selected
+               team with the skill ready and the target in range will use it. */
+            function abilitySquad(v) {
+                let best = null, bd = 1e9;
+                for (const q of sel) {
+                    if (!q.soldiers || !abilityReady(q)) continue;
+                    const a = q.type.ability, c = cent(q), d = hy(v.ax - c.x, v.ay - c.y);
+                    if (d > a.range || !los(c.x, c.y, v.ax, v.ay)) continue;
+                    if (d < bd) { bd = d; best = q }
+                }
+                return best;
+            }
+            function doAbility(x, y) {
+                const p = pickAt(x, y), v = p && p.veh;
+                atMode = false;
+                if (!v || v.team === FACTIONS.player.team) { msg('Pick an enemy vehicle', '#ffb09a'); return false }
+                const q = abilitySquad(v);
+                if (!q) { msg('No bazooka team in range (or skill recharging)', '#ffb09a'); return false }
+                const key = useAbility(q, v);
+                if (key) sfxAck();
+                return !!key;
+            }
             function doNade(x, y) {
                 const w = toW(x, y), q = nadeSquad(w);
                 nadeMode = false;
@@ -2088,7 +2830,7 @@
                 if (state !== 'play' || !sel.size) return;
                 if (nadeMode) { nadeMode = false; return }
                 const t = pickAt(x, y), qs = [...sel];
-                if (t && t.team) { for (const q of qs) order(q, { type: 'attack', target: t.sq }); marks.push({ x: t.x, y: t.y, t: 0, dur: .6, c: '#ff5a4f' }); sfxAck(); return }
+                if (t && t.team) { const tgt = t.sq || t.veh; for (const q of qs) order(q, { type: 'attack', target: tgt }); marks.push({ x: t.x, y: t.y, t: 0, dur: .6, c: '#ff5a4f' }); sfxAck(); return }
                 const w = toW(x, y);
                 let face = null; if (fx != null) { const b = toW(fx, fy); face = Math.atan2(b.y - w.y, b.x - w.x) }
                 let cx = 0, cy = 0; for (const q of qs) { cx += q.ax; cy += q.ay } cx /= qs.length; cy /= qs.length;
@@ -2107,8 +2849,8 @@
                 }
             }
             function clickSel(x, y, add) {
-                const s = pickAt(x, y);
-                if (s && !s.team) { if (add) { if (sel.has(s.sq)) sel.delete(s.sq); else sel.add(s.sq) } else selectOnly(s.sq) }
+                const p = pickAt(x, y), t = p && !p.team ? (p.sq || p.veh) : null;
+                if (t) { if (add) { if (sel.has(t)) sel.delete(t); else sel.add(t) } else selectOnly(t) }
                 else if (!add) sel.clear();
             }
 
@@ -2122,7 +2864,11 @@
                 if (e.pointerType !== 'mouse') { drag = { type: 'touch', x0: x, y0: y, x, y, cx: cam.x, cy: cam.y, moved: false }; return }
                 if (e.button === 1) { e.preventDefault(); drag = { type: 'pan', x0: x, y0: y, x, y, cx: cam.x, cy: cam.y }; return }
                 if (e.button === 2) { drag = { type: 'face', x0: x, y0: y, x, y }; return }
-                if (e.button === 0) { if (nadeMode) { doNade(x, y); return } drag = { type: 'box', x0: x, y0: y, x, y, add: e.shiftKey } }
+                if (e.button === 0) {
+                    if (atMode) { doAbility(x, y); return }
+                    if (nadeMode) { doNade(x, y); return }
+                    drag = { type: 'box', x0: x, y0: y, x, y, add: e.shiftKey };
+                }
             });
             cv.addEventListener('pointermove', e => {
                 const [x, y] = lp(e); ptr.x = x; ptr.y = y; ptr.in = true; if (!drag) return;
@@ -2138,9 +2884,10 @@
                 if (d.type === 'box') { if (hy(x - d.x0, y - d.y0) > 6) boxSel(d.x0, d.y0, x, y, d.add); else clickSel(x, y, d.add) }
                 else if (d.type === 'face') { const far = hy(x - d.x0, y - d.y0) > 18; command(d.x0, d.y0, far ? x : null, far ? y : null) }
                 else if (d.type === 'touch' && !d.moved) {
+                    if (atMode) { doAbility(x, y); return }
                     if (nadeMode) { doNade(x, y); return }
-                    const s = pickAt(x, y);
-                    if (s && !s.team) selectOnly(s.sq); else if (sel.size) command(x, y, null, null);
+                    const p = pickAt(x, y), own = p && !p.team ? (p.sq || p.veh) : null;
+                    if (own) selectOnly(own); else if (sel.size) command(x, y, null, null);
                 }
             });
             cv.addEventListener('pointercancel', () => { drag = null });
@@ -2166,7 +2913,7 @@
                 if (k === 'KeyP') { togglePause(); return }
                 if (state !== 'play') return;
                 if (/^Digit[1-6]$/.test(k)) {
-                    const q = playerSquads()[+k[5] - 1];
+                    const q = playerForce()[+k[5] - 1];
                     if (q) { const now = performance.now(); if (e.shiftKey) sel.add(q); else selectOnly(q); if (lastKey.k === k && now - lastKey.t < 350) centerOn([q]); lastKey = { k, t: now } }
                     return;
                 }
@@ -2215,8 +2962,8 @@
             }
             function buildDeployButtons() {                                          // one button per deployable unit type
                 for (const el of barEl.querySelectorAll('.unitbtn')) el.remove();
-                for (const id of FACTIONS.player.units) {
-                    const type = getUnit(id), b = document.createElement('button');
+                for (const id of FACTIONS.player.units.concat(FACTIONS.player.vehicles || [])) {
+                    const type = getUnit(id) || getVehicle(id), b = document.createElement('button');
                     b.className = 'unitbtn'; b.dataset.unit = id; b.title = (type.notes || []).join(' · ');
                     const sw = document.createElement('i');
                     sw.className = 'sw'; sw.style.background = (type.portrait && type.portrait.head) || '#5aa8ff';
@@ -2238,7 +2985,7 @@
                 const o = objectiveText(), ob = $('obj');
                 if (ob.textContent !== o.t) ob.textContent = o.t;
                 ob.style.color = o.danger ? 'var(--text-danger)' : '';
-                for (const b of barEl.querySelectorAll('.unitbtn')) b.disabled = cp < (getUnit(b.dataset.unit) || {}).cost || state !== 'play';
+                for (const b of barEl.querySelectorAll('.unitbtn')) b.disabled = cp < ((getUnit(b.dataset.unit) || getVehicle(b.dataset.unit) || {}).cost || 0) || state !== 'play';
                 let h = '';
                 playerSquads().forEach((q, n) => {
                     let p = '';
@@ -2254,15 +3001,29 @@
                         + '<div class="cs">' + q.type.name + ' · ' + q.soldiers.length + '/' + q.count + ' · ' + FN[q.form] + '</div>'
                         + '<div class="cs">' + st + '</div>'
                         + '<div class="cs">' + (q.nade > 0 ? 'Grenade ' + (q.gcd > 0 ? Math.ceil(q.gcd) + 's' : 'ready') : 'No grenades') + '</div>'
+                        + (q.type.ability ? '<div class="cs">' + q.type.ability.name + ' ' + (q.apCd > 0 ? Math.ceil(q.apCd) + 's' : '[' + q.type.ability.key[3] + '] ready') + '</div>' : '')
                         + '</div>';
                 });
+                let idx = playerSquads().length;
+                for (const v of playerVehicles()) {                              // armour card: hp, gun state, modules
+                    idx++;
+                    const hp = Math.max(0, v.hp / v.maxHp), pr = v.type.portrait || {};
+                    const down = Object.keys(v.modules).filter(k => v.modules[k] > 0).map(k => moduleOf(k).name + ' ' + Math.ceil(v.modules[k]) + 's');
+                    h += '<div class="card' + (sel.has(v) ? ' sel' : '') + '" data-q="' + v.id + '" data-v="1">'
+                        + '<div class="ch"><span><i class="sw" style="background:' + (pr.head || '#5c6b4a') + ';border-color:' + (pr.band || '#8af0a4') + '"></i> ' + v.name + '</span><span>' + idx + '</span></div>'
+                        + '<div class="pips"><span><i style="width:' + Math.round(hp * 100) + '%' + (hp < .35 ? ';background:var(--text-danger)' : hp < .6 ? ';background:var(--text-warning)' : '') + '"></i></span></div>'
+                        + '<div class="cs">' + v.type.name + ' · ' + Math.round(v.hp) + '/' + v.maxHp + ' hp</div>'
+                        + '<div class="cs">' + (v.dead ? 'wrecked' : v.traverse ? 'turret traversing' : v.cd > 0 ? 'reloading ' + v.cd.toFixed(1) + 's' : 'gun ready') + '</div>'
+                        + '<div class="cs">' + (down.length ? 'DOWN: ' + down.join(', ') : 'all systems up') + '</div>'
+                        + '</div>';
+                }
                 if (!h) h = '<div class="cs" style="padding:6px 0">No squads in the field. Deploy a new squad.</div>';
                 if (h !== lastCards) { cardsEl.innerHTML = h; lastCards = h }
             }
             let lastTap = { id: -1, t: 0 };
             cardsEl.addEventListener('pointerdown', e => {
                 const el = e.target.closest('.card'); if (!el) return;
-                const q = squads.find(s => s.id === +el.dataset.q); if (!q) return;
+                const q = squads.find(s => s.id === +el.dataset.q) || vehicles.find(v => v.id === +el.dataset.q); if (!q) return;
                 const now = performance.now(), dbl = lastTap.id === q.id && now - lastTap.t < 350;
                 if (dbl) { sel.add(q); centerOn([q]) }
                 else if (e.shiftKey || e.pointerType !== 'mouse') { if (sel.has(q)) sel.delete(q); else sel.add(q) }
@@ -2288,8 +3049,9 @@
             }
             function reset() {
                 squads = []; soldiers = []; corpses = []; bullets = []; nades = []; parts = [];
+                vehicles = []; shells = [];
                 rings = []; lights = []; marks = []; msgs = []; sel.clear();
-                nadeMode = false; cp = GAME.startingCp; kills = 0; gt = 0; waveI = 0; eNade = 10; sqId = 0; shake = 0;
+                nadeMode = false; atMode = false; cp = GAME.startingCp; kills = 0; gt = 0; waveI = 0; eNade = 10; sqId = 0; shake = 0;
                 waveT = REG.waves.length ? REG.waves[0].delay : 0;
                 for (const o of REG.objectives) for (const st of (o.with || [])) st.fired = false;
                 objCtx.outcome = null; objCtx.objective = null;
@@ -2309,8 +3071,8 @@
                 try {
                     upCam(dt);
                     if (state === 'play') update(dt);
-                    if (state === 'play' && ptr.in) { hover = pickAt(ptr.x, ptr.y); hoverSq = hover ? hover.sq : null } else { hover = null; hoverSq = null }
-                    const cur = nadeMode ? 'crosshair' : hover ? (hover.team ? (sel.size ? 'crosshair' : 'default') : 'pointer') : 'default';
+                    if (state === 'play' && ptr.in) { hover = pickAt(ptr.x, ptr.y); hoverSq = hover ? hover.sq : null; hoverVeh = hover ? hover.veh : null } else { hover = null; hoverSq = null; hoverVeh = null }
+                    const cur = (nadeMode || atMode) ? 'crosshair' : hover ? (hover.team ? (sel.size ? 'crosshair' : 'default') : 'pointer') : 'default';
                     if (cv.style.cursor !== cur) cv.style.cursor = cur;
                     render(now / 1000);
                     if ((hudT -= dt) <= 0) { hudT = .15; hud() }
@@ -2326,6 +3088,7 @@
                 factions: () => FACTIONS,
                 /* --- state accessors (read-only views of the live simulation) --- */
                 squads: () => squads, soldiers: () => soldiers, buildings: () => buildings, objects: () => statics,
+                vehicles: () => vehicles, shells: () => shells, playerVehicles, enemyVehicles, playerForce,
                 zones: () => flags, parts: () => parts, bullets: () => bullets, nades: () => nades, corpses: () => corpses,
                 messages: () => msgs, selection: () => sel, camera: () => cam, keys: () => keys,
                 playerSquads, enemySquads, centroid: cent,
@@ -2351,12 +3114,19 @@
                 /* --- registration: the extension points --- */
                 defineUnit, defineRole, defineWeapon, defineBuilding, defineBuildingBehaviour,
                 defineObject, defineStructure, defineOrder, defineSystem, defineObjective, defineCommand,
-                registerWave: defineWave,
+                defineVehicle, defineModule, registerWave: defineWave,
                 unit: getUnit, units: () => REG.units, role: getRole, weapon: getWeapon, building: getBuilding,
+                vehicle: getVehicle, vehicleTypes: () => REG.vehicles, module: id => MODULES[id] || null,
                 /* --- actions --- */
                 deploy: () => deployUnit(FACTIONS.player.units[0]), deployUnit, makeSquad, addSoldier,
                 addSoldierTo: (q, roleId) => addSoldier(q, q.ax, q.ay, roleId),
                 order, moveTo, attackMove, command, boxSel, clickSel, throwNade, explode, damage, kill,
+                /* --- armour / vehicles --- */
+                hitVehicle, armourZone, killVehicle, makeVehicle,                                 // angle-of-attack damage model
+                disableModule, repairModule: (v, id) => { if (v && v.modules[id] !== undefined) v.modules[id] = 0; return v && v.modules[id] === 0 },
+                moduleState, useAbility, abilityReady, abilityTarget,
+                /* --- lighting --- */
+                light, sun: () => GAME.sun, setSun: s => { Object.assign(GAME.sun, s); return GAME.sun }, sunVec,
                 heal: (s, amount) => { if (s && !s.dead) s.hp = Math.min(s.maxHp, s.hp + amount) },
                 msg, end: (win, text) => end(win, text || ((win ? 'Victory' : 'Defeat') + ' at ' + clock())),
                 centerOn, shake: v => { shake = Math.min(1, shake + v) },
@@ -2369,6 +3139,7 @@
                 /* --- ui --- */
                 ui: {
                     hud, message: msg, objectiveText, setNadeMode: v => { nadeMode = !!v }, nadeMode: () => nadeMode,
+                    setAtMode: v => { atMode = !!v }, atMode: () => atMode, doAbility,
                     buttons: buildDeployButtons,                 // rebuild the deploy bar after editing factions().x.units
                     showOverlay: showOv, togglePause, overlayText: () => ovt.textContent,
                     screen: () => ({ W, H }), zoom: () => cam.z, setZoom: z => { cam.z = cl(z, .55, 1.7) },
@@ -2396,9 +3167,12 @@
                     clearSquads: team => { for (const q of squads) if (team == null || q.team === team) for (const s of q.soldiers) kill(s, 0, 0, 0) },
                     spawnBuilding: (typeId, i, j, team, opts) => { const b = placeBuilding(typeId, i, j, team, opts); STATICS.sorted = false; return b },
                     spawnUnit: (unitId, team, x, y, ai) => makeSquad(unitId, team == null ? FACTIONS.enemy.team : team, x, y, ai || 'assault', PI / 4),
+                    spawnVehicle: (typeId, team, x, y, ai, face) => makeVehicle(typeId, team == null ? FACTIONS.enemy.team : team, x, y, ai || 'assault', face == null ? PI / 4 : face),
+                    setVehicleHp: (v, hp) => { if (v) { v.hp = hp; if (hp <= 0) killVehicle(v, 0, 0) } return v },
+                    clearVehicles: team => { for (const v of vehicles) if (team == null || v.team === team) killVehicle(v, 0, 0) },
                 },
             };
-            const assets = { WEAPONS, OBJECT, BEHAVIOURS, FORMS, FN, AI, PAL, BP, SK };
+            const assets = { WEAPONS, OBJECT, BEHAVIOURS, MODULES, VEHICLE, FORMS, FN, AI, VAI, PAL, BP, SK };
             API.assets = assets;
             window.SquadCommand = { api: API, version: 2, assets, registries: REG };
 
